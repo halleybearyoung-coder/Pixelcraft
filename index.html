@@ -324,8 +324,23 @@
         import * as THREE from 'three';
         import { PointerLockControls } from 'three/examples/jsm/controls/PointerLockControls.js';
 
-        // --- GEMINI AI INTEGRATION ---
-        const apiKey = ""; // Provided by system environment
+        // --- MOB MATERIALS (Moved to top to prevent ReferenceError) ---
+        const globalMobMats = (() => {
+            const genTex = (color, type) => {
+                const c = document.createElement('canvas'); c.width=64; c.height=64; const cx = c.getContext('2d');
+                cx.fillStyle = color; cx.fillRect(0,0,64,64);
+                for(let i=0;i<400;i++) { cx.fillStyle = Math.random()>0.5?'rgba(255,255,255,0.1)':'rgba(0,0,0,0.1)'; cx.fillRect(Math.random()*64,Math.random()*64,2,2); }
+                if(type==='face'){ cx.fillStyle='white'; cx.fillRect(8,20,16,12); cx.fillRect(40,20,16,12); cx.fillStyle='#3E2723'; cx.fillRect(14,22,6,8); cx.fillRect(46,22,6,8); cx.fillStyle='#8D6E63'; cx.fillRect(20,48,24,6); cx.fillStyle='#3E2723'; cx.fillRect(0,0,64,12); cx.fillRect(10,12,8,6); cx.fillRect(46,12,8,6); }
+                if(type==='shirt'){ cx.fillStyle='#1565C0'; cx.fillRect(28,0,8,64); cx.fillStyle='#E3F2FD'; cx.fillRect(30,10,4,4); cx.fillRect(30,30,4,4); }
+                const t = new THREE.CanvasTexture(c); t.magFilter = THREE.NearestFilter;
+                return new THREE.MeshLambertMaterial({ map: t });
+            };
+            return { skin: genTex('#FFCCBC', 'skin'), face: genTex('#FFCCBC', 'face'), shirt: genTex('#1976D2', 'shirt'), pants: genTex('#283593', 'pants') };
+        })();
+
+        let playerHealth = 10;
+        const maxHealth = 10;
+        const apiKey = ""; 
 
         async function callGemini(prompt, systemInstruction = "") {
             const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
@@ -474,10 +489,10 @@
         }
 
         const { tex: textureAtlas, canvas: atlasCanvas } = createTextureAtlas();
-        const material = new THREE.MeshLambertMaterial({ map: textureAtlas, side: THREE.DoubleSide });
+        const material = new THREE.MeshLambertMaterial({ map: textureAtlas, side: THREE.DoubleSide, alphaTest: 0.1, transparent: true });
+        const waterMaterial = new THREE.MeshLambertMaterial({ map: textureAtlas, side: THREE.DoubleSide, transparent: true, opacity: 0.7 });
         const atlasURL = atlasCanvas.toDataURL();
 
-        // --- BLOCK & ITEM DEFINITIONS ---
         const BLOCKS = {
             AIR: 0, 
             GRASS: { id: 1, hardness: 0.6, toolClass: 'shovel' },
@@ -588,48 +603,49 @@
                 
                 // Visuals
                 if (type === 'pig') {
-                    const body = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.6, 1.2), new THREE.MeshLambertMaterial({ color: 0xFFB6C1 }));
-                    body.position.y = 0.5;
+                    const mat = new THREE.MeshLambertMaterial({ color: 0xFFB6C1 });
+                    const body = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.6, 1.2), mat);
+                    body.position.y = 0.6;
                     this.mesh.add(body);
-                    const head = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.5), new THREE.MeshLambertMaterial({ color: 0xFFB6C1 }));
-                    head.position.set(0, 0.8, 0.7);
-                    this.mesh.add(head);
-                } else { // Human
-                    const shirt = new THREE.MeshLambertMaterial({ color: 0x1976D2 }); // Blue
-                    const skin = new THREE.MeshLambertMaterial({ color: 0xFFCCBC }); // Light skin
-                    const pants = new THREE.MeshLambertMaterial({ color: 0x283593 }); // Dark blue
-
-                    // Head
-                    const head = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.5), skin);
-                    head.position.y = 1.75;
+                    const head = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.5), mat);
+                    head.position.set(0, 0.9, 0.7);
                     this.mesh.add(head);
 
-                    // Body
-                    const body = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.75, 0.25), shirt);
-                    body.position.y = 1.125;
-                    this.mesh.add(body);
+                    this.pigLegs = [];
+                    const legGeo = new THREE.BoxGeometry(0.25, 0.4, 0.25);
+                    const pos = [[-0.25, 0.5], [0.25, 0.5], [-0.25, -0.5], [0.25, -0.5]];
+                    pos.forEach(p => {
+                        const grp = new THREE.Group();
+                        grp.position.set(p[0], 0.4, p[1]);
+                        const leg = new THREE.Mesh(legGeo, mat);
+                        leg.position.y = -0.2;
+                        grp.add(leg);
+                        this.mesh.add(grp);
+                        this.pigLegs.push(grp);
+                    });
+                } else { 
+                    const mats = { skin: globalMobMats.skin.clone(), face: globalMobMats.face.clone(), shirt: globalMobMats.shirt.clone(), pants: globalMobMats.pants.clone() };
+                    const headMesh = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.5), [mats.skin, mats.skin, mats.skin, mats.skin, mats.face, mats.skin]); 
+                    headMesh.position.y = 1.75; this.mesh.add(headMesh);
+                    
+                    const body = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.75, 0.25), mats.shirt); 
+                    body.position.y = 1.125; this.mesh.add(body);
+                    
+                    this.leftArm = new THREE.Group(); this.leftArm.position.set(-0.35, 1.45, 0); 
+                    const laMesh = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.7, 0.2), mats.skin); 
+                    laMesh.position.y = -0.3; this.leftArm.add(laMesh); this.mesh.add(this.leftArm);
 
-                    // Arms (Pivot groups)
-                    this.leftArm = new THREE.Group(); this.leftArm.position.set(-0.35, 1.45, 0);
-                    const laMesh = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.7, 0.2), skin);
-                    laMesh.position.y = -0.3; this.leftArm.add(laMesh);
-                    this.mesh.add(this.leftArm);
+                    this.rightArm = new THREE.Group(); this.rightArm.position.set(0.35, 1.45, 0); 
+                    const raMesh = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.7, 0.2), mats.skin); 
+                    raMesh.position.y = -0.3; this.rightArm.add(raMesh); this.mesh.add(this.rightArm);
 
-                    this.rightArm = new THREE.Group(); this.rightArm.position.set(0.35, 1.45, 0);
-                    const raMesh = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.7, 0.2), skin);
-                    raMesh.position.y = -0.3; this.rightArm.add(raMesh);
-                    this.mesh.add(this.rightArm);
+                    this.leftLeg = new THREE.Group(); this.leftLeg.position.set(-0.15, 0.75, 0); 
+                    const llMesh = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.75, 0.24), mats.pants); 
+                    llMesh.position.y = -0.375; this.leftLeg.add(llMesh); this.mesh.add(this.leftLeg);
 
-                    // Legs (Pivot groups)
-                    this.leftLeg = new THREE.Group(); this.leftLeg.position.set(-0.15, 0.75, 0);
-                    const llMesh = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.75, 0.24), pants);
-                    llMesh.position.y = -0.375; this.leftLeg.add(llMesh);
-                    this.mesh.add(this.leftLeg);
-
-                    this.rightLeg = new THREE.Group(); this.rightLeg.position.set(0.15, 0.75, 0);
-                    const rlMesh = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.75, 0.24), pants);
-                    rlMesh.position.y = -0.375; this.rightLeg.add(rlMesh);
-                    this.mesh.add(this.rightLeg);
+                    this.rightLeg = new THREE.Group(); this.rightLeg.position.set(0.15, 0.75, 0); 
+                    const rlMesh = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.75, 0.24), mats.pants); 
+                    rlMesh.position.y = -0.375; this.rightLeg.add(rlMesh); this.mesh.add(this.rightLeg);
                 }
                 
                 this.mesh.position.copy(this.position);
@@ -719,6 +735,18 @@
                         this.rightLeg.rotation.x = THREE.MathUtils.lerp(this.rightLeg.rotation.x, 0, delta * 10);
                         this.leftArm.rotation.x = THREE.MathUtils.lerp(this.leftArm.rotation.x, 0, delta * 10);
                         this.rightArm.rotation.x = THREE.MathUtils.lerp(this.rightArm.rotation.x, 0, delta * 10);
+                    }
+                } else if (this.type === 'pig') {
+                    if (this.moveDir.length() > 0.01) {
+                        this.animTime += delta * 10;
+                        // Front-Left & Back-Right move together
+                        this.pigLegs[0].rotation.x = Math.sin(this.animTime) * 0.5;
+                        this.pigLegs[3].rotation.x = Math.sin(this.animTime) * 0.5;
+                        // Front-Right & Back-Left move opposite
+                        this.pigLegs[1].rotation.x = Math.sin(this.animTime + Math.PI) * 0.5;
+                        this.pigLegs[2].rotation.x = Math.sin(this.animTime + Math.PI) * 0.5;
+                    } else {
+                        this.pigLegs.forEach(l => l.rotation.x = THREE.MathUtils.lerp(l.rotation.x, 0, delta * 10));
                     }
                 }
             }
@@ -1409,8 +1437,6 @@
         const mobManager = new MobManager(scene, world);
         
         // --- PLAYER STATS ---
-        let playerHealth = 10;
-        const maxHealth = 10;
 
         function updateHealthUI() {
             const hearts = document.querySelectorAll('.heart');
