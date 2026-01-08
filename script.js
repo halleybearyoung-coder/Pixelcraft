@@ -31,8 +31,17 @@ const globalMobMats = (() => {
         pants: genTex('#283593', 'pants'),
         zombieSkin: genTex('#4CAF50', 'skin'),
         zombieFace: genTex('#4CAF50', 'zombie_face'),
-        zombieShirt: genTex('#3E2723', 'shirt'), // Brown/Rotten shirt
-        zombiePants: genTex('#1A237E', 'pants')
+        zombieShirt: genTex('#3E2723', 'shirt'),
+        zombiePants: genTex('#1A237E', 'pants'),
+        // New Mobs
+        huskSkin: genTex('#D7CCC8', 'skin'), // Sand-like
+        huskFace: genTex('#D7CCC8', 'zombie_face'),
+        skeletonSkin: genTex('#E0E0E0', 'skin'), // Bone
+        skeletonFace: genTex('#E0E0E0', 'zombie_face'), // Skull-ish
+        snowDefSkin: genTex('#E3F2FD', 'skin'), // Ice/Snow
+        snowDefFace: genTex('#E3F2FD', 'face'),
+        sandDefSkin: genTex('#FDD835', 'skin'), // Gold/Sand
+        sandDefFace: genTex('#FDD835', 'face'),
     };
 })();
 
@@ -432,12 +441,23 @@ class Mob {
                 this.pigLegs.push(grp);
             });
         } else {
-            // Human or Zombie
+            // Humanoid (Human, Zombie, Husk, Skeleton, Defender)
             let mats;
             if (type === 'zombie') {
                 mats = { skin: globalMobMats.zombieSkin.clone(), face: globalMobMats.zombieFace.clone(), shirt: globalMobMats.zombieShirt.clone(), pants: globalMobMats.zombiePants.clone() };
-                this.health = 20;
-                this.isHostile = true; // Zombies are always hostile
+                this.health = 20; this.isHostile = true;
+            } else if (type === 'husk') {
+                mats = { skin: globalMobMats.huskSkin.clone(), face: globalMobMats.huskFace.clone(), shirt: globalMobMats.huskSkin.clone(), pants: globalMobMats.huskSkin.clone() };
+                this.health = 20; this.isHostile = true;
+            } else if (type === 'skeleton') {
+                mats = { skin: globalMobMats.skeletonSkin.clone(), face: globalMobMats.skeletonFace.clone(), shirt: globalMobMats.skeletonSkin.clone(), pants: globalMobMats.skeletonSkin.clone() };
+                this.health = 20; this.isHostile = true;
+            } else if (type === 'snow_defender') {
+                mats = { skin: globalMobMats.snowDefSkin.clone(), face: globalMobMats.snowDefFace.clone(), shirt: globalMobMats.snowDefSkin.clone(), pants: globalMobMats.snowDefSkin.clone() };
+                this.health = 40; this.isHostile = false; // Neutral
+            } else if (type === 'sand_defender') {
+                mats = { skin: globalMobMats.sandDefSkin.clone(), face: globalMobMats.sandDefFace.clone(), shirt: globalMobMats.sandDefSkin.clone(), pants: globalMobMats.sandDefSkin.clone() };
+                this.health = 40; this.isHostile = false; // Neutral
             } else {
                 mats = { skin: globalMobMats.skin.clone(), face: globalMobMats.face.clone(), shirt: globalMobMats.shirt.clone(), pants: globalMobMats.pants.clone() };
             }
@@ -464,8 +484,8 @@ class Mob {
             const rlMesh = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.75, 0.24), mats.pants);
             rlMesh.position.y = -0.375; this.rightLeg.add(rlMesh); this.mesh.add(this.rightLeg);
 
-            // Zombie Animation Prep: Raise arms
-            if (type === 'zombie') {
+            // Zombie/Husk/Skeleton Animation Prep: Raise arms
+            if (type === 'zombie' || type === 'husk' || type === 'skeleton') {
                 this.leftArm.rotation.x = -Math.PI / 2;
                 this.rightArm.rotation.x = -Math.PI / 2;
             }
@@ -633,12 +653,19 @@ class Mob {
             if (!this.dead) flash(this.mesh, false);
         }, 200);
 
-        if (this.type === 'human') this.isHostile = true;
+        if (this.type === 'human' || this.type.includes('defender')) this.isHostile = true;
 
         if (this.health <= 0) {
             this.dead = true;
             this.mesh.visible = false;
-            // Simple drop logic could go here
+            // Drops
+            if (this.type === 'snow_defender') {
+                addToInventory(BLOCKS.SNOW.id, 10 + Math.floor(Math.random() * 6));
+                addToInventory(BLOCKS.GOLEM_EYE.id, 1);
+            } else if (this.type === 'sand_defender') {
+                addToInventory(BLOCKS.SAND.id, 10 + Math.floor(Math.random() * 6));
+                addToInventory(BLOCKS.GOLEM_EYE.id, 1);
+            }
         }
     }
 }
@@ -677,15 +704,30 @@ class MobManager {
             }
         }
 
-        // Simple biome/height check for Zombies
-        // If it's Plains (default) and we want town protection, we can just randomize.
-        let type = Math.random();
-        let mobType = 'pig';
+        // Biome Check (Simple approximation)
+        const bVal = biomeNoise.noise2D(x * 0.002, z * 0.002);
+        let biome = 'PLAINS';
+        if (bVal > 0.5) biome = 'DESERT';
+        else if (bVal < -0.5) biome = 'SNOW';
 
-        // Higher zombie chance lower down or random surface
-        if (type < 0.4) mobType = 'pig';
-        else if (type < 0.6) mobType = 'human';
-        else mobType = 'zombie';
+        let mobType = 'pig';
+        const r = Math.random();
+
+        if (biome === 'DESERT') {
+            if (r < 0.4) mobType = 'husk';
+            else if (r < 0.6) mobType = 'sand_defender';
+            else mobType = 'skeleton';
+        } else if (biome === 'SNOW') {
+            if (r < 0.4) mobType = 'zombie'; // Zombies in snow too?
+            else if (r < 0.6) mobType = 'snow_defender';
+            else mobType = 'skeleton';
+        } else {
+            // Plains/Jungle
+            if (r < 0.4) mobType = 'pig';
+            else if (r < 0.6) mobType = 'human';
+            else if (r < 0.8) mobType = 'zombie';
+            else mobType = 'skeleton';
+        }
 
         this.mobs.push(new Mob(mobType, x, y, z, this.scene));
     }
@@ -755,6 +797,19 @@ function initUI() {
         el.id = `cont-player-${i}`;
         el.onclick = () => handleContainerClick(i, 'player');
         containerPlayerGrid.appendChild(el);
+    }
+
+    // Furnace Inventory Grid
+    const furnacePlayerGrid = document.getElementById('furnace-player-grid');
+    for (let i = 0; i < INVENTORY_SIZE; i++) {
+        const el = document.createElement('div');
+        el.className = 'slot';
+        el.id = `furnace-player-${i}`;
+        el.onclick = () => handleInventoryClick(i, true); // Reusing handleInventoryClick with flag? Or new handler?
+        // Actually, let's use a specific handler or update handleInvClick to support context.
+        // For simplicity, let's make a new handler wrapper.
+        el.onclick = () => handleFurnaceInvClick(i);
+        furnacePlayerGrid.appendChild(el);
     }
 
     updateUI();
@@ -1703,6 +1758,11 @@ document.addEventListener('mousedown', (e) => {
                 openContainer(`${bx},${by},${bz}`);
                 return;
             }
+            // Furnace Interaction
+            if (id === BLOCKS.FURNACE.id) {
+                openFurnace();
+                return;
+            }
         }
         placeBlock();
     }
@@ -1940,6 +2000,7 @@ function animate() {
 
         world.update(camera.position);
         mobManager.update(delta, camera.position);
+        updateFurnace(delta);
     }
     renderer.render(scene, camera);
 }
