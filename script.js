@@ -758,6 +758,13 @@ const RECIPES = [
     { name: "Stone Shovel", input: { type: 11, count: 1 }, input2: { type: 20, count: 2 }, output: { type: 24, count: 1 }, requiresTable: true },
     { name: "Stone Bricks", input: { type: 11, count: 4 }, output: { type: 10, count: 4 }, requiresTable: true },
     { name: "Sandstone", input: { type: 6, count: 4 }, output: { type: 14, count: 1 }, requiresTable: true },
+    { name: "Furnace", input: { type: 11, count: 8 }, output: { type: 34, count: 1 }, requiresTable: true },
+    // Swords
+    { name: "Wood Sword", input: { type: 9, count: 2 }, input2: { type: 20, count: 1 }, output: { type: 35, count: 1 }, requiresTable: true },
+    { name: "Stone Sword", input: { type: 11, count: 2 }, input2: { type: 20, count: 1 }, output: { type: 36, count: 1 }, requiresTable: true },
+    { name: "Iron Sword", input: { type: 41, count: 2 }, input2: { type: 20, count: 1 }, output: { type: 37, count: 1 }, requiresTable: true },
+    { name: "Gold Sword", input: { type: 42, count: 2 }, input2: { type: 20, count: 1 }, output: { type: 38, count: 1 }, requiresTable: true },
+    { name: "Diamond Sword", input: { type: 43, count: 2 }, input2: { type: 20, count: 1 }, output: { type: 39, count: 1 }, requiresTable: true },
 ];
 
 function initUI() {
@@ -1710,7 +1717,13 @@ document.addEventListener('mousedown', (e) => {
                 curr = curr.parent;
             }
             if (targetMob) {
-                targetMob.takeDamage(5);
+                const heldItem = inventory[selectedSlot];
+                const toolInfo = getBlockProps(heldItem.type);
+                let damage = 1;
+                if (toolInfo.isItem && toolInfo.toolType === 'sword') {
+                    damage = toolInfo.damage;
+                }
+                targetMob.takeDamage(damage);
                 const dir = targetMob.position.clone().sub(camera.position).normalize();
                 targetMob.velocity.add(dir.multiplyScalar(10));
                 targetMob.velocity.y += 5;
@@ -1803,6 +1816,184 @@ function placeBlock() {
         item.count--;
         if (item.count === 0) item.type = 0;
         updateUI();
+    }
+}
+
+// --- SMELTING SYSTEM ---
+const SMELTING_RECIPES = [
+    { input: BLOCKS.IRON_ORE.id, output: BLOCKS.IRON_INGOT.id },
+    { input: BLOCKS.GOLD_ORE.id, output: BLOCKS.GOLD_INGOT.id },
+    { input: BLOCKS.SAND.id, output: BLOCKS.SANDSTONE.id }, // Sand -> Sandstone (Glass later)
+    { input: BLOCKS.COBBLESTONE.id, output: BLOCKS.STONE.id },
+    { input: BLOCKS.LOG.id, output: BLOCKS.COAL_ORE.id }, // Charcoal/Coal
+    { input: BLOCKS.CACTUS.id, output: BLOCKS.GRASS.id }, // Dye placeholder
+];
+
+let furnaceState = {
+    active: false,
+    input: null, // { type, count }
+    fuel: null,
+    output: null,
+    progress: 0,
+    maxProgress: 100,
+    burnTime: 0,
+    maxBurnTime: 0
+};
+
+function openFurnace() {
+    document.getElementById('furnace-screen').style.display = 'flex';
+    document.exitPointerLock();
+    isInventoryOpen = true;
+    updateFurnaceUI();
+    renderInventory('furnace-player-grid');
+}
+
+function closeFurnace() {
+    document.getElementById('furnace-screen').style.display = 'none';
+    document.body.requestPointerLock();
+    isInventoryOpen = false;
+}
+
+function updateFurnaceUI() {
+    const slots = ['input', 'fuel', 'output'];
+    slots.forEach(type => {
+        const slotEl = document.getElementById(`furnace-${type}`);
+        slotEl.innerHTML = '';
+        const item = furnaceState[type];
+        if (item && item.type !== 0) {
+            const img = document.createElement('img');
+            img.src = atlasCanvas.toDataURL(); // Use atlas for now, or getBlockTexture helper if exists. 
+            // Actually we don't have getBlockTexture helper easily accessible for single icon.
+            // Let's use a simple div with background position like inventory slots.
+            const icon = document.createElement('div');
+            icon.style.width = '32px'; icon.style.height = '32px';
+            icon.style.backgroundImage = `url(${atlasCanvas.toDataURL()})`;
+            icon.style.imageRendering = 'pixelated';
+            const pos = getBlockIconPos(item.type);
+            icon.style.backgroundPosition = `-${pos[0] * 32}px -${pos[1] * 32}px`;
+            slotEl.appendChild(icon);
+
+            if (item.count > 1) {
+                const count = document.createElement('div');
+                count.className = 'count';
+                count.innerText = item.count;
+                slotEl.appendChild(count);
+            }
+        }
+
+        // Click handler
+        slotEl.onclick = (e) => handleFurnaceSlotClick(type, e);
+    });
+
+    const progressEl = document.getElementById('furnace-progress');
+    if (furnaceState.burnTime > 0) {
+        progressEl.classList.add('active');
+    } else {
+        progressEl.classList.remove('active');
+    }
+}
+
+function handleFurnaceSlotClick(type, e) {
+    if (furnaceState[type]) {
+        addToInventory(furnaceState[type].type, furnaceState[type].count);
+        furnaceState[type] = null;
+        updateFurnaceUI();
+        renderInventory('furnace-player-grid');
+        updateUI();
+    }
+}
+
+function handleFurnaceInvClick(index) {
+    const item = inventory[index];
+    if (!item || item.type === 0) return;
+
+    // Fuel check
+    const isFuel = item.type === BLOCKS.COAL_ORE.id || item.type === BLOCKS.LOG.id || item.type === BLOCKS.PLANKS.id || item.type === BLOCKS.STICK.id;
+
+    if (isFuel && !furnaceState.fuel) {
+        furnaceState.fuel = { ...item };
+        inventory[index] = { type: 0, count: 0 };
+    } else if (!furnaceState.input) {
+        furnaceState.input = { ...item };
+        inventory[index] = { type: 0, count: 0 };
+    } else {
+        return;
+    }
+    updateFurnaceUI();
+    renderInventory('furnace-player-grid');
+    updateUI();
+}
+
+function updateFurnace(delta) {
+    if (furnaceState.burnTime > 0) {
+        furnaceState.burnTime -= delta * 10;
+        if (furnaceState.burnTime <= 0) furnaceState.burnTime = 0;
+    }
+
+    if (furnaceState.input && furnaceState.input.type !== 0) {
+        const recipe = SMELTING_RECIPES.find(r => r.input === furnaceState.input.type);
+        if (recipe) {
+            if (furnaceState.burnTime <= 0 && furnaceState.fuel && furnaceState.fuel.type !== 0) {
+                // Consume fuel
+                furnaceState.fuel.count--;
+                if (furnaceState.fuel.count <= 0) furnaceState.fuel = null;
+                furnaceState.maxBurnTime = 100;
+                furnaceState.burnTime = 100;
+                updateFurnaceUI();
+            }
+
+            if (furnaceState.burnTime > 0) {
+                furnaceState.progress += delta * 20;
+                if (furnaceState.progress >= furnaceState.maxProgress) {
+                    // Smelt
+                    furnaceState.input.count--;
+                    if (furnaceState.input.count <= 0) furnaceState.input = null;
+
+                    if (!furnaceState.output) furnaceState.output = { type: recipe.output, count: 0 };
+                    else if (furnaceState.output.type === recipe.output) furnaceState.output.count++;
+
+                    furnaceState.progress = 0;
+                    updateFurnaceUI();
+                }
+            } else {
+                furnaceState.progress = 0;
+            }
+        }
+    }
+}
+
+// Helper to render inventory in different grids
+function renderInventory(gridId) {
+    const grid = document.getElementById(gridId);
+    if (!grid) return;
+    grid.innerHTML = '';
+    for (let i = 0; i < INVENTORY_SIZE; i++) {
+        const el = document.createElement('div');
+        el.className = 'slot';
+        el.id = `${gridId}-${i}`;
+
+        const item = inventory[i];
+        if (item.type !== 0) {
+            const icon = document.createElement('div');
+            icon.style.width = '32px'; icon.style.height = '32px';
+            icon.style.backgroundImage = `url(${atlasCanvas.toDataURL()})`;
+            icon.style.imageRendering = 'pixelated';
+            const pos = getBlockIconPos(item.type);
+            icon.style.backgroundPosition = `-${pos[0] * 32}px -${pos[1] * 32}px`;
+            el.appendChild(icon);
+
+            if (item.count > 1) {
+                const count = document.createElement('div');
+                count.className = 'count';
+                count.innerText = item.count;
+                el.appendChild(count);
+            }
+        }
+
+        if (gridId === 'furnace-player-grid') el.onclick = () => handleFurnaceInvClick(i);
+        else if (gridId === 'container-player-grid') el.onclick = () => handleContainerClick(i, 'player');
+
+        grid.appendChild(el);
     }
 }
 
