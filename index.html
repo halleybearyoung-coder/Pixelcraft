@@ -1068,10 +1068,8 @@
         const atlasURL = atlasCanvas.toDataURL();
 
         // --- AUTO TEXTURE LOADER FOR GITHUB ---
-        // 1. Hide the manual button since we are auto-loading
-        const texBtn = document.getElementById('texture-btn');
-        if (texBtn) texBtn.style.display = 'none';
-
+        // Allow manual upload as backup (Removed the code that hid the button)
+        
         // 2. Define the mapping (same as before)
         const TEXTURE_MAP = [
             [0, 0, ['grass_block_top', 'grass_top']],
@@ -1094,15 +1092,18 @@
             [1, 4, ['jungle_leaves', 'leaves_jungle']],
             [2, 4, ['melon_side']],
             [3, 4, ['melon_top']],
+            // Items
             [0, 5, ['stick']],
             [1, 5, ['wooden_pickaxe', 'wood_pickaxe']],
             [2, 5, ['stone_pickaxe']],
             [3, 5, ['wooden_shovel', 'wood_shovel']],
             [0, 6, ['stone_shovel']],
+            // Ores
             [0, 7, ['coal_ore']],
             [1, 7, ['iron_ore']],
             [2, 7, ['gold_ore']],
             [3, 7, ['diamond_ore']],
+            // Misc
             [0, 8, ['chest_side', 'normal', 'chest_normal']],
             [1, 8, ['chest_top', 'normal', 'chest_normal']],
             [2, 8, ['sandstone']],
@@ -1112,11 +1113,13 @@
             [0, 10, ['furnace_front_on', 'furnace_front']],
             [1, 10, ['furnace_side']],
             [2, 10, ['ender_eye']],
+            // Swords
             [0, 11, ['wooden_sword', 'wood_sword']],
             [1, 11, ['stone_sword']],
             [2, 11, ['iron_sword']],
             [3, 11, ['golden_sword', 'gold_sword']],
             [0, 12, ['diamond_sword']],
+            // Ingots
             [1, 12, ['iron_ingot']],
             [2, 12, ['gold_ingot']],
             [3, 12, ['diamond']]
@@ -2320,6 +2323,7 @@
             }
 
             generateChunkData(cx, cz) {
+                // ... existing generateChunkData code ...
                 const data = new Uint8Array(this.cellSize * this.cellSize * CHUNK_HEIGHT);
                 let centerBiome = 'PLAINS';
 
@@ -2350,7 +2354,6 @@
                         let surfaceBlock = BLOCKS.GRASS.id;
                         let subSurface = BLOCKS.DIRT.id;
 
-                        // Adjusted surface height for deeper world
                         const baseHeight = 65;
 
                         if (biome === 'DESERT') {
@@ -2376,13 +2379,12 @@
                             if (y === 0) type = BLOCKS.BEDROCK.id;
                             else if (y < height - 3) {
                                 type = BLOCKS.STONE.id;
-                                // REBALANCED ORE GENERATION
                                 const r = Math.random();
                                 if (r < 0.05) {
-                                    if (y < 15 && r < 0.008) type = BLOCKS.DIAMOND_ORE.id; // Very deep
-                                    else if (y < 30 && r < 0.015) type = BLOCKS.GOLD_ORE.id; // Deep
-                                    else if (y < 50 && r < 0.03) type = BLOCKS.IRON_ORE.id; // Medium
-                                    else type = BLOCKS.COAL_ORE.id; // Everywhere
+                                    if (y < 15 && r < 0.008) type = BLOCKS.DIAMOND_ORE.id; 
+                                    else if (y < 30 && r < 0.015) type = BLOCKS.GOLD_ORE.id; 
+                                    else if (y < 50 && r < 0.03) type = BLOCKS.IRON_ORE.id; 
+                                    else type = BLOCKS.COAL_ORE.id; 
                                 }
                             }
                             else if (y < height) type = subSurface;
@@ -2467,6 +2469,7 @@
                 }
 
                 const positions = []; const normals = []; const uvs = []; const indices = [];
+                const colors = []; // ADDED: Vertex Color Array
 
                 const startX = cx * this.cellSize;
                 const startZ = cz * this.cellSize;
@@ -2486,6 +2489,14 @@
                                 return nb === 0 || nb === BLOCKS.LEAVES.id || nb === BLOCKS.CACTUS.id || nb === BLOCKS.JUNGLE_LEAVES.id || nb === BLOCKS.SPIKE.id || nb === BLOCKS.COBWEB.id;
                             };
 
+                            // ADDED: Tint Logic
+                            let r=1, g=1, b=1;
+                            // Grass Top (1), Leaves (5), Jungle Leaves (16)
+                            const isFoliage = (type === 1 || type === 5 || type === 16);
+                            if (isFoliage) {
+                                r=0.5; g=0.8; b=0.4; // Biome Green
+                            }
+
                             // Right (px)
                             if (check(1, 0, 0)) {
                                 const ndx = positions.length / 3;
@@ -2493,6 +2504,11 @@
                                 normals.push(1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0);
                                 const uv = getUv('side');
                                 uvs.push(uv[0], uv[1], uv[2], uv[3], uv[4], uv[5], uv[6], uv[7]);
+                                
+                                // Side of Grass block is WHITE (Dirt), others (Leaves) are GREEN
+                                if (type === 1) { for(let i=0; i<4; i++) colors.push(1,1,1); }
+                                else { for(let i=0; i<4; i++) colors.push(r,g,b); }
+                                
                                 indices.push(ndx, ndx + 1, ndx + 2, ndx, ndx + 2, ndx + 3);
                             }
                             // Left (nx)
@@ -2502,6 +2518,10 @@
                                 normals.push(-1, 0, 0, -1, 0, 0, -1, 0, 0, -1, 0, 0);
                                 const uv = getUv('side');
                                 uvs.push(uv[0], uv[1], uv[2], uv[3], uv[4], uv[5], uv[6], uv[7]);
+                                
+                                if (type === 1) { for(let i=0; i<4; i++) colors.push(1,1,1); }
+                                else { for(let i=0; i<4; i++) colors.push(r,g,b); }
+
                                 indices.push(ndx, ndx + 1, ndx + 2, ndx, ndx + 2, ndx + 3);
                             }
                             // Top (py)
@@ -2511,6 +2531,10 @@
                                 normals.push(0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0);
                                 const uv = getUv('top');
                                 uvs.push(uv[0], uv[1], uv[2], uv[3], uv[4], uv[5], uv[6], uv[7]);
+                                
+                                // TOP FACE ALWAYS TINTED FOR FOLIAGE
+                                for(let i=0; i<4; i++) colors.push(r,g,b);
+
                                 indices.push(ndx, ndx + 1, ndx + 2, ndx, ndx + 2, ndx + 3);
                             }
                             // Bottom (ny)
@@ -2520,6 +2544,10 @@
                                 normals.push(0, -1, 0, 0, -1, 0, 0, -1, 0, 0, -1, 0);
                                 const uv = getUv('bottom');
                                 uvs.push(uv[0], uv[1], uv[2], uv[3], uv[4], uv[5], uv[6], uv[7]);
+                                
+                                // Bottom is usually dirt/white
+                                for(let i=0; i<4; i++) colors.push(1,1,1);
+
                                 indices.push(ndx, ndx + 1, ndx + 2, ndx, ndx + 2, ndx + 3);
                             }
                             // Front (pz)
@@ -2529,6 +2557,10 @@
                                 normals.push(0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1);
                                 const uv = getUv('side');
                                 uvs.push(uv[0], uv[1], uv[2], uv[3], uv[4], uv[5], uv[6], uv[7]);
+                                
+                                if (type === 1) { for(let i=0; i<4; i++) colors.push(1,1,1); }
+                                else { for(let i=0; i<4; i++) colors.push(r,g,b); }
+
                                 indices.push(ndx, ndx + 1, ndx + 2, ndx, ndx + 2, ndx + 3);
                             }
                             // Back (nz)
@@ -2538,6 +2570,10 @@
                                 normals.push(0, 0, -1, 0, 0, -1, 0, 0, -1, 0, 0, -1);
                                 const uv = getUv('side');
                                 uvs.push(uv[0], uv[1], uv[2], uv[3], uv[4], uv[5], uv[6], uv[7]);
+                                
+                                if (type === 1) { for(let i=0; i<4; i++) colors.push(1,1,1); }
+                                else { for(let i=0; i<4; i++) colors.push(r,g,b); }
+
                                 indices.push(ndx, ndx + 1, ndx + 2, ndx, ndx + 2, ndx + 3);
                             }
                         }
@@ -2552,6 +2588,7 @@
                     geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
                     geo.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
                     geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+                    geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3)); // ADDED: Attribute
                     geo.setIndex(indices);
                     const mesh = new THREE.Mesh(geo, material);
                     group.add(mesh);
