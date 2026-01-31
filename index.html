@@ -3030,7 +3030,7 @@
         // FIX: Corrected Logic - Hide menu when locked (playing), Show menu when unlocked (paused)
         controls.addEventListener('lock', () => {
             prevTime = performance.now(); // Reset time to prevent lag spike
-            blocker.style.display = 'none';
+            blocker.style.display = 'block';
             isInventoryOpen = false;
             isContainerOpen = false;
             document.getElementById('inventory-screen').style.display = 'none';
@@ -3412,8 +3412,97 @@
             renderer.setSize(window.innerWidth, window.innerHeight);
         });
 
-        animate();
-       </script>
-</body>
+        // --- SAVE & RESET UI LOGIC (Fixed) ---
+        
+        // 1. Define saveGame globally so buttons can use it
+        function saveGame() {
+            if (typeof SaveManager === 'undefined' || typeof world === 'undefined') return;
+            const pData = {
+                x: camera.position.x, y: camera.position.y, z: camera.position.z,
+                rx: camera.rotation.x, ry: camera.rotation.y,
+                health: typeof playerHealth !== 'undefined' ? playerHealth : 10,
+                inventory: typeof inventory !== 'undefined' ? inventory : [],
+                chests: Array.from(world.chestData.entries())
+            };
+            SaveManager.savePlayer(pData);
+            
+            world.dirtyChunks.forEach(key => {
+                const data = world.chunkData.get(key);
+                if(data) SaveManager.saveChunk(key, data);
+            });
+            world.dirtyChunks.clear();
+        }
 
+        // 2. Bind Buttons with StopPropagation (Prevents menu from closing)
+        const saveBtn = document.getElementById('save-btn');
+        if (saveBtn) {
+            saveBtn.onclick = (e) => {
+                e.stopPropagation(); // CRITICAL: Prevents clicking 'through' to the blocker
+                saveGame();
+            };
+        }
+
+        const resetBtn = document.getElementById('reset-btn');
+        if (resetBtn) {
+            resetBtn.onclick = (e) => {
+                e.stopPropagation(); // CRITICAL
+                if(confirm("Reset World? All progress will be lost.")) {
+                    SaveManager.resetWorld();
+                }
+            };
+        }
+
+        // 3. Fix Blocker to only resume when clicking EMPTY space
+        //const blocker = document.getElementById('blocker');
+        if (blocker) {
+            blocker.onclick = (e) => {
+                // Only lock if the user clicked the dark overlay itself, not a button/input inside it
+                if (e.target === blocker && typeof controls !== 'undefined') {
+                    controls.lock();
+                }
+            };
+        }
+
+        // 4. Initialization & Auto-Load
+        if (typeof SaveManager !== 'undefined') {
+            SaveManager.init().then(async () => {
+                if (typeof world !== 'undefined') await world.loadMetadata();
+                const pData = await SaveManager.loadPlayer();
+                
+                if (pData) {
+                    camera.position.set(pData.x, pData.y, pData.z);
+                    camera.rotation.set(pData.rx, pData.ry, 0);
+                    if (typeof playerHealth !== 'undefined') playerHealth = pData.health;
+                    if (typeof updateHealthUI === 'function') updateHealthUI();
+                    
+                    if (pData.inventory && typeof inventory !== 'undefined') {
+                        for(let i=0; i<36; i++) if(pData.inventory[i]) inventory[i] = pData.inventory[i];
+                    }
+                    if (typeof updateUI === 'function') updateUI();
+                    
+                    if (pData.chests && typeof world !== 'undefined') {
+                        pData.chests.forEach(([k, v]) => world.chestData.set(k, v));
+                    }
+                } else {
+                    // Default Spawn
+                    camera.position.set(0, 100, 0);
+                }
+                
+                const loadEl = document.getElementById('loading');
+                if(loadEl) loadEl.style.display = 'none';
+                
+                // Start Animation Loop AFTER data is loaded
+                animate();
+            });
+        } else {
+            // Fallback start if SaveManager fails
+            animate();
+        }
+
+        // Auto Save (Interval)
+        setInterval(() => { if(typeof saveGame === 'function') saveGame(); }, 2000);
+        window.addEventListener('beforeunload', () => { if(typeof saveGame === 'function') saveGame(); });
+
+    </script>
+</body>
 </html>
