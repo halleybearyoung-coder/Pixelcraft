@@ -2271,74 +2271,6 @@
         const noise = new SimpleNoise();
         const biomeNoise = new SimpleNoise();
 
-        // --- SAVE SYSTEM (IndexedDB) ---
-        const SaveManager = {
-            db: null,
-            init() {
-                return new Promise((resolve, reject) => {
-                    const request = indexedDB.open("PixelcraftDB", 1);
-                    request.onupgradeneeded = (e) => {
-                        const db = e.target.result;
-                        if (!db.objectStoreNames.contains("chunks")) db.createObjectStore("chunks");
-                        if (!db.objectStoreNames.contains("player")) db.createObjectStore("player");
-                    };
-                    request.onsuccess = (e) => {
-                        this.db = e.target.result;
-                        console.log("DB Connected");
-                        resolve();
-                    };
-                    request.onerror = (e) => reject(e);
-                });
-            },
-            saveChunk(key, data) {
-                if (!this.db) return;
-                const tx = this.db.transaction("chunks", "readwrite");
-                tx.objectStore("chunks").put(data, key);
-            },
-            loadChunk(key) {
-                return new Promise((resolve) => {
-                    if (!this.db) return resolve(null);
-                    const tx = this.db.transaction("chunks", "readonly");
-                    const req = tx.objectStore("chunks").get(key);
-                    req.onsuccess = () => resolve(req.result);
-                    req.onerror = () => resolve(null);
-                });
-            },
-            savePlayer(data) {
-                if (!this.db) return;
-                const tx = this.db.transaction("player", "readwrite");
-                tx.objectStore("player").put(data, "main");
-                const status = document.getElementById('save-status');
-                if (status) {
-                    status.innerText = "Game Saved: " + new Date().toLocaleTimeString();
-                    setTimeout(() => status.innerText = "", 3000);
-                }
-            },
-            loadPlayer() {
-                return new Promise((resolve) => {
-                    if (!this.db) return resolve(null);
-                    const tx = this.db.transaction("player", "readonly");
-                    const req = tx.objectStore("player").get("main");
-                    req.onsuccess = () => resolve(req.result);
-                });
-            },
-            resetWorld() {
-                if (!this.db) return;
-                const tx = this.db.transaction(["chunks", "player"], "readwrite");
-                tx.objectStore("chunks").clear();
-                tx.objectStore("player").clear();
-                location.reload();
-            },
-            getAllChunkKeys() {
-                return new Promise(resolve => {
-                    if(!this.db) return resolve([]);
-                    const tx = this.db.transaction("chunks", "readonly");
-                    const req = tx.objectStore("chunks").getAllKeys();
-                    req.onsuccess = () => resolve(req.result);
-                });
-            }
-        };
-
         class VoxelWorld {
             constructor(scene) {
                 this.chunks = new Map();
@@ -2346,14 +2278,6 @@
                 this.chestData = new Map();
                 this.scene = scene;
                 this.cellSize = CHUNK_SIZE;
-                this.dirtyChunks = new Set(); 
-                this.savedChunkKeys = new Set();
-                this.loadingChunks = new Set();
-            }
-
-            async loadMetadata() {
-                const keys = await SaveManager.getAllChunkKeys();
-                keys.forEach(k => this.savedChunkKeys.add(k));
             }
 
             getBlock(x, y, z) {
@@ -2390,7 +2314,6 @@
 
                 if (data[index] !== type) {
                     data[index] = type;
-                    this.dirtyChunks.add(key); // Mark dirty
                     this.updateChunkMesh(cx, cz);
                     if (lx === 0) this.updateChunkMesh(cx - 1, cz);
                     if (lx === this.cellSize - 1) this.updateChunkMesh(cx + 1, cz);
@@ -2843,26 +2766,12 @@
 
                 for (let x = -DRAW_DISTANCE; x <= DRAW_DISTANCE; x++) {
                     for (let z = -DRAW_DISTANCE; z <= DRAW_DISTANCE; z++) {
-                        const cx = pcx + x;
-                        const cz = pcz + z;
-                        const key = `${cx},${cz}`;
-                        
-                        if (!this.chunkData.has(key) && !this.loadingChunks.has(key)) {
-                            if (this.savedChunkKeys.has(key)) {
-                                this.loadingChunks.add(key);
-                                SaveManager.loadChunk(key).then(data => {
-                                    if (data) {
-                                        this.chunkData.set(key, data);
-                                        this.updateChunkMesh(cx, cz);
-                                    }
-                                    this.loadingChunks.delete(key);
-                                });
-                            } else {
-                                this.chunkData.set(key, this.generateChunkData(cx, cz));
-                                this.updateChunkMesh(cx, cz);
-                            }
+                        const key = `${pcx + x},${pcz + z}`;
+                        if (!this.chunks.has(key) && !this.chunkData.has(key)) {
+                            this.chunkData.set(key, this.generateChunkData(pcx + x, pcz + z));
+                            this.updateChunkMesh(pcx + x, pcz + z);
                         } else if (!this.chunks.has(key) && this.chunkData.has(key)) {
-                            this.updateChunkMesh(cx, cz);
+                            this.updateChunkMesh(pcx + x, pcz + z);
                         }
                     }
                 }
