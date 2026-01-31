@@ -1067,9 +1067,9 @@
         const material = new THREE.MeshLambertMaterial({ map: textureAtlas, side: THREE.DoubleSide, alphaTest: 0.1, transparent: true, vertexColors: true });
         const atlasURL = atlasCanvas.toDataURL();
 
-        // --- TEXTURE LOADER LOGIC (Manual Upload with Fix) ---
+        // --- TEXTURE LOADING SYSTEM ---
         
-        // 1. Grid Mapping (Standard Minecraft names -> Atlas positions)
+        // 1. Texture Mapping (Standard Minecraft names -> Atlas positions)
         const TEXTURE_MAP = [
             [0, 0, ['grass_block_top', 'grass_top']],
             [1, 0, ['stone']],
@@ -1124,119 +1124,113 @@
             [3, 12, ['diamond']]
         ];
 
-        // 2. Setup Button Event Listeners (Fixed Propagation)
-        const texBtn = document.getElementById('texture-btn');
-        const texInput = document.getElementById('texture-input');
+        // 2. Logic to process a Zip file
+        function loadTexturePack(zip) {
+            const ctx = atlasCanvas.getContext('2d');
+            const promises = [];
 
-        if (texBtn) {
-            texBtn.style.display = 'inline-block'; // Ensure button is visible
-            texBtn.addEventListener('click', function(e) {
-                e.preventDefault();
-                e.stopPropagation(); // STOP the click from reaching the blocker (which starts the game)
-                texInput.click();
-            });
-        }
+            TEXTURE_MAP.forEach(mapping => {
+                const [col, row, names] = mapping;
+                let foundFile = null;
 
-        if (texInput) {
-            // Prevent clicking the file dialog from triggering game start (browsers handle this differently, safest to catch it)
-            texInput.addEventListener('click', function(e) {
-                e.stopPropagation();
-            });
+                for (const name of names) {
+                    const regex = new RegExp(`(?:^|/)${name}\\.png$`, 'i');
+                    const match = Object.keys(zip.files).find(path => regex.test(path) && !path.includes('__MACOSX'));
+                    if (match) {
+                        foundFile = zip.files[match];
+                        break;
+                    }
+                }
 
-            texInput.addEventListener('change', function(e) {
-                const file = e.target.files[0];
-                if (!file) return;
-
-                if (file.name.endsWith('.zip')) {
-                    // Handle Zip (Texture Pack)
-                    const ctx = atlasCanvas.getContext('2d');
-                    JSZip.loadAsync(file).then(function(zip) {
-                        const promises = [];
-                        
-                        TEXTURE_MAP.forEach(mapping => {
-                            const [col, row, names] = mapping;
-                            let foundFile = null;
-                            
-                            // Search zip for file
-                            for (const name of names) {
-                                // Try exact name or common paths
-                                const regex = new RegExp(`(?:^|/)${name}\\.png$`, 'i');
-                                const match = Object.keys(zip.files).find(path => regex.test(path) && !path.includes('__MACOSX'));
-                                if (match) {
-                                    foundFile = zip.files[match];
-                                    break;
+                if (foundFile) {
+                    const p = foundFile.async("blob").then(blob => {
+                        return new Promise(resolve => {
+                            const img = new Image();
+                            img.onload = () => {
+                                const B = 64; 
+                                ctx.clearRect(col * B, row * B, B, B);
+                                
+                                // TINTING LOGIC (Make green things green)
+                                const isFoliage = names.some(n => n.includes('grass_block_top') || n.includes('leaves') || n.includes('grass_top'));
+                                if (isFoliage) {
+                                    const tC = document.createElement('canvas');
+                                    tC.width = B; tC.height = B;
+                                    const tCtx = tC.getContext('2d');
+                                    tCtx.drawImage(img, 0, 0, B, B);
+                                    tCtx.globalCompositeOperation = 'multiply';
+                                    tCtx.fillStyle = '#91BD59'; 
+                                    tCtx.fillRect(0, 0, B, B);
+                                    tCtx.globalCompositeOperation = 'destination-in';
+                                    tCtx.drawImage(img, 0, 0, B, B);
+                                    ctx.drawImage(tC, col * B, row * B);
+                                } else {
+                                    ctx.drawImage(img, col * B, row * B, B, B);
                                 }
-                            }
-
-                            if (foundFile) {
-                                const p = foundFile.async("blob").then(blob => {
-                                    return new Promise(resolve => {
-                                        const img = new Image();
-                                        img.onload = () => {
-                                            const B = 64; 
-                                            ctx.clearRect(col * B, row * B, B, B);
-                                            
-                                            // TINTING LOGIC
-                                            const isFoliage = names.some(n => n.includes('grass_block_top') || n.includes('leaves') || n.includes('grass_top'));
-                                            if (isFoliage) {
-                                                const tC = document.createElement('canvas');
-                                                tC.width = B; tC.height = B;
-                                                const tCtx = tC.getContext('2d');
-                                                tCtx.drawImage(img, 0, 0, B, B);
-                                                tCtx.globalCompositeOperation = 'multiply';
-                                                tCtx.fillStyle = '#91BD59'; 
-                                                tCtx.fillRect(0, 0, B, B);
-                                                tCtx.globalCompositeOperation = 'destination-in';
-                                                tCtx.drawImage(img, 0, 0, B, B);
-                                                ctx.drawImage(tC, col * B, row * B);
-                                            } else {
-                                                ctx.drawImage(img, col * B, row * B, B, B);
-                                            }
-                                            resolve();
-                                        };
-                                        img.src = URL.createObjectURL(blob);
-                                    });
-                                });
-                                promises.push(p);
-                            }
-                        });
-
-                        Promise.all(promises).then(() => {
-                            textureAtlas.needsUpdate = true;
-                            document.querySelectorAll('.slot-icon, .craft-icon').forEach(el => {
-                                el.style.backgroundImage = `url(${atlasCanvas.toDataURL()})`;
-                            });
-                            console.log("Texture Pack Applied!");
-                            alert("Texture Pack Loaded Successfully!");
+                                resolve();
+                            };
+                            img.src = URL.createObjectURL(blob);
                         });
                     });
-                } else {
-                    // Handle Single Image (Atlas)
-                    const reader = new FileReader();
-                    reader.onload = function(evt) {
-                        const img = new Image();
-                        img.onload = function() {
-                            const ctx = atlasCanvas.getContext('2d');
-                            ctx.clearRect(0, 0, atlasCanvas.width, atlasCanvas.height);
-                            ctx.drawImage(img, 0, 0, atlasCanvas.width, atlasCanvas.height);
-                            textureAtlas.needsUpdate = true;
-                            document.querySelectorAll('.slot-icon, .craft-icon').forEach(el => {
-                                el.style.backgroundImage = `url(${atlasCanvas.toDataURL()})`;
-                            });
-                            alert("Texture Atlas Loaded!");
-                        };
-                        img.src = evt.target.result;
-                    };
-                    reader.readAsDataURL(file);
+                    promises.push(p);
                 }
             });
+
+            Promise.all(promises).then(() => {
+                textureAtlas.needsUpdate = true;
+                document.querySelectorAll('.slot-icon, .craft-icon').forEach(el => {
+                    el.style.backgroundImage = `url(${atlasCanvas.toDataURL()})`;
+                });
+                console.log("Texture Pack Loaded!");
+            });
         }
-        
-        // Auto-load attempt (optional fallback)
+
+        // 3. Attempt Auto-Fetch (GitHub hosting)
         fetch('faithful.zip')
-            .then(response => { if(response.ok) return response.blob(); })
-            .then(blob => { if(blob) { /* Logic to reuse zip loader could go here, but manual is safer */ } })
-            .catch(() => {});
+            .then(response => {
+                if (!response.ok) throw new Error("Texture pack not found");
+                return response.blob();
+            })
+            .then(JSZip.loadAsync)
+            .then(loadTexturePack)
+            .catch(err => {
+                console.log("Auto-load skipped, waiting for manual upload.", err);
+            });
+
+        // 4. Manual Upload Setup
+        document.getElementById('texture-btn').addEventListener('click', function(e) {
+            e.stopPropagation();
+            document.getElementById('texture-input').click();
+        });
+
+        document.getElementById('texture-input').addEventListener('click', function(e) {
+            e.stopPropagation();
+        });
+
+        document.getElementById('texture-input').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            if (file.name.endsWith('.zip')) {
+                JSZip.loadAsync(file).then(loadTexturePack);
+            } else {
+                // Single Atlas Image
+                const reader = new FileReader();
+                reader.onload = function(evt) {
+                    const img = new Image();
+                    img.onload = function() {
+                        const ctx = atlasCanvas.getContext('2d');
+                        ctx.clearRect(0, 0, atlasCanvas.width, atlasCanvas.height);
+                        ctx.drawImage(img, 0, 0, atlasCanvas.width, atlasCanvas.height);
+                        textureAtlas.needsUpdate = true;
+                        document.querySelectorAll('.slot-icon, .craft-icon').forEach(el => {
+                            el.style.backgroundImage = `url(${atlasCanvas.toDataURL()})`;
+                        });
+                    };
+                    img.src = evt.target.result;
+                };
+                reader.readAsDataURL(file);
+            }
+        });
 
         const BLOCKS = {
             AIR: 0,
