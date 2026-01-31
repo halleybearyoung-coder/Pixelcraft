@@ -319,13 +319,15 @@
         .heart {
             width: 32px;
             height: 32px;
-            background-image: url('data:image/png;base32,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAYAAADED76LAAAAFzBMVEUAAAD/AAD/AAD/AAD/AAD/AAD/AAD/AAD23g7TAAAAB3RSTlMA71D76wO5SgAAAAlwSFlzAAALEwAACxMBAJqcGAAAAClJREFUCNdjYEAADigFEncG4kYg/g+H/x8I/4MKo4tiZ8AETgPxZrg4AC9SDf3rklO9AAAAAElFTkSuQmCC'); /* Red Pixel Heart */
+            /* FIX: Changed base32 to base64 */
+            background-image: url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAYAAADED76LAAAAFzBMVEUAAAD/AAD/AAD/AAD/AAD/AAD/AAD/AAD23g7TAAAAB3RSTlMA71D76wO5SgAAAAlwSFlzAAALEwAACxMBAJqcGAAAAClJREFUCNdjYEAADigFEncG4kYg/g+H/x8I/4MKo4tiZ8AETgPxZrg4AC9SDf3rklO9AAAAAElFTkSuQmCC'); 
             background-size: contain;
             image-rendering: pixelated;
         }
 
         .heart.dead {
-            background-image: url('data:image/png;base32,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAYAAADED76LAAAAFzBMVEUAAAD/AAD/AAD/AAD/AAD/AAD/AAD/AAD23g7TAAAAB3RSTlMA71D76wO5SgAAAAlwSFlzAAALEwAACxMBAJqcGAAAAClJREFUCNdjYEAADigFEncG4kYg/g+H/x8I/4MKo4tiZ8AETgPxZrg4AC9SDf3rklO9AAAAAElFTkSuQmCC'); /* Fallback / same shape */
+            /* FIX: Changed base32 to base64 */
+            background-image: url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAYAAADED76LAAAAFzBMVEUAAAD/AAD/AAD/AAD/AAD/AAD/AAD/AAD23g7TAAAAB3RSTlMA71D76wO5SgAAAAlwSFlzAAALEwAACxMBAJqcGAAAAClJREFUCNdjYEAADigFEncG4kYg/g+H/x8I/4MKo4tiZ8AETgPxZrg4AC9SDf3rklO9AAAAAElFTkSuQmCC');
             filter: grayscale(100%) brightness(50%);
         }
 
@@ -1969,7 +1971,8 @@
         }
 
         function toggleInventory(forceState = null, withTable = false) {
-            isInventoryOpen = forceState !== null ? !forceState : !isInventoryOpen;
+            // FIX: Removed the '!' before forceState. true should mean Open, not Close.
+            isInventoryOpen = forceState !== null ? forceState : !isInventoryOpen;
             if (isInventoryOpen) isContainerOpen = false;
 
             isCraftingTableOpen = withTable;
@@ -2004,23 +2007,30 @@
         }
 
         function craftItem(recipe) {
+            // FIX: Check total items across all slots instead of just looking for one big stack
             const check = (req) => {
                 if (!req) return true;
+                let total = 0;
                 for (let i = 0; i < INVENTORY_SIZE; i++) {
-                    if (inventory[i].type === req.type && inventory[i].count >= req.count) return true;
+                    if (inventory[i].type === req.type) total += inventory[i].count;
                 }
-                return false;
+                return total >= req.count;
             };
+
             const consume = (req) => {
                 if (!req) return;
+                let needed = req.count;
                 for (let i = 0; i < INVENTORY_SIZE; i++) {
-                    if (inventory[i].type === req.type && inventory[i].count >= req.count) {
-                        inventory[i].count -= req.count;
+                    if (inventory[i].type === req.type) {
+                        const take = Math.min(inventory[i].count, needed);
+                        inventory[i].count -= take;
+                        needed -= take;
                         if (inventory[i].count === 0) { inventory[i].type = 0; inventory[i].lore = null; }
-                        return;
+                        if (needed <= 0) return;
                     }
                 }
             };
+
             if (check(recipe.input) && check(recipe.input2)) {
                 consume(recipe.input);
                 consume(recipe.input2);
