@@ -1102,8 +1102,9 @@
             [1, 7, ['iron_ore']],
             [2, 7, ['gold_ore']],
             [3, 7, ['diamond_ore']],
-            [0, 8, ['chest_side', 'chest_normal', 'normal']],
-            [1, 8, ['chest_top', 'chest_normal', 'normal']],
+            // Misc
+            [0, 8, ['chest_side']], // FIX: Removed 'normal' so it doesn't overwrite the cropped skin
+            [1, 8, ['chest_top']],  // FIX: Removed 'normal'
             [2, 8, ['sandstone']],
             [1, 9, ['tnt_side']],
             [2, 9, ['tnt_top']],
@@ -1116,22 +1117,56 @@
             [2, 11, ['iron_sword']],
             [3, 11, ['golden_sword', 'gold_sword']],
             [0, 12, ['diamond_sword']],
+            // Ingots
             [1, 12, ['iron_ingot']],
             [2, 12, ['gold_ingot']],
-            [3, 12, ['diamond']]
+            [3, 12, ['diamond', 'diamond_gem']] // FIX: Added 'diamond_gem' just in case
         ];
 
         // 2. Logic to process Zip
+        function updateMobSkin(type, img) {
+            // Helper to copy part of the skin to the material canvas
+            const drawPart = (mat, sx, sy, sw, sh) => {
+                if (!mat || !mat.map || !mat.map.image) return;
+                const canvas = mat.map.image;
+                const ctx = canvas.getContext('2d');
+                const scale = img.width / 64; // Handle 64x, 128x, etc skins
+                
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.imageSmoothingEnabled = false;
+                // Draw specific region from skin to the full material texture
+                ctx.drawImage(img, sx * scale, sy * scale, sw * scale, sh * scale, 0, 0, canvas.width, canvas.height);
+                mat.map.needsUpdate = true;
+            };
+
+            const mats = globalMobMats;
+            
+            if (type === 'zombie') {
+                drawPart(mats.zombieFace, 8, 8, 8, 8); // Head Front
+                drawPart(mats.zombieShirt, 20, 20, 8, 12); // Body
+                drawPart(mats.zombiePants, 4, 20, 4, 12); // Leg
+                drawPart(mats.zombieSkin, 44, 20, 4, 12); // Arm
+            }
+            else if (type === 'skeleton') {
+                drawPart(mats.skeletonFace, 8, 8, 8, 8);
+                drawPart(mats.skeletonSkin, 44, 20, 4, 12); // Use Arm/Bone texture for general bone parts
+                // Note: Skeleton shirt/pants share 'skeletonSkin' in current engine setup
+            }
+            else if (type === 'husk') {
+                drawPart(mats.huskFace, 8, 8, 8, 8);
+                drawPart(mats.huskSkin, 20, 20, 8, 12); // Use Body texture for general husk parts
+            }
+        }
+
         function loadTexturePack(zip) {
             const ctx = atlasCanvas.getContext('2d');
             const promises = [];
 
+            // BLOCK/ITEM LOADING
             TEXTURE_MAP.forEach(mapping => {
                 const [col, row, names] = mapping;
                 let foundFile = null;
                 for (const name of names) {
-                    // FIX: Properly interpolate the 'name' variable into the Regex!
-                    // Previous version had a typo '${name}' inside a string which broke the search.
                     const regex = new RegExp(`(?:^|/)${name}\\.png$`, 'i');
                     const match = Object.keys(zip.files).find(path => regex.test(path) && !path.includes('__MACOSX'));
                     if (match) { foundFile = zip.files[match]; break; }
@@ -1164,6 +1199,69 @@
                         });
                     });
                     promises.push(p);
+                }
+            });
+
+            // SPECIAL: Chest Entity Texture Cropper
+            // Finds entity/chest/normal.png and cuts out the faces
+            const chestMatch = Object.keys(zip.files).find(path => path.includes('entity/chest/normal.png') || (path.includes('chest') && path.includes('normal.png') && !path.includes('double')));
+            if (chestMatch) {
+                const p = zip.files[chestMatch].async("blob").then(blob => {
+                    return new Promise(resolve => {
+                        const img = new Image();
+                        img.onload = () => {
+                             const scale = img.width / 64; 
+                             const B = 64; 
+                             
+                             // 1. TOP FACE (Lid Top) -> Atlas 1, 8
+                             // Source: x=14, y=0, w=14, h=14
+                             ctx.clearRect(1 * B, 8 * B, B, B);
+                             ctx.drawImage(img, 14*scale, 0*scale, 14*scale, 14*scale, 1*B, 8*B, B, B);
+                             
+                             // 2. SIDE/FRONT FACE (Composite) -> Atlas 0, 8
+                             ctx.clearRect(0 * B, 8 * B, B, B);
+                             
+                             // Draw Lid (Top Strip) - Approx top 1/3 of block
+                             // Source: x=14, y=14, w=14, h=5
+                             ctx.drawImage(img, 14*scale, 14*scale, 14*scale, 5*scale, 0*B, 8*B, B, 22);
+                             
+                             // Draw Body (Bottom Strip) - Approx bottom 2/3 of block
+                             // Source: x=14, y=34, w=14, h=10
+                             ctx.drawImage(img, 14*scale, 34*scale, 14*scale, 10*scale, 0*B, (8*B)+22, B, 42);
+                             
+                             // Draw Lock/Latch (Center)
+                             // Source: x=3, y=1, w=2, h=4 (Rough standard pos)
+                             ctx.drawImage(img, 3*scale, 1*scale, 2*scale, 4*scale, (0*B)+28, (8*B)+18, 8, 14);
+                             
+                             resolve();
+                        };
+                        img.src = URL.createObjectURL(blob);
+                    });
+                });
+                promises.push(p);
+            }
+
+            // MOB TEXTURE LOADING
+            const MOB_SKINS = [
+                { keys: ['zombie'], target: 'zombie' },
+                { keys: ['skeleton'], target: 'skeleton' },
+                { keys: ['husk'], target: 'husk' }
+            ];
+
+            MOB_SKINS.forEach(mob => {
+                let mobFile = null;
+                for (const k of mob.keys) {
+                     const regex = new RegExp(`(?:^|/)${k}\\.png$`, 'i');
+                     const match = Object.keys(zip.files).find(path => regex.test(path) && !path.includes('__MACOSX'));
+                     if (match) { mobFile = zip.files[match]; break; }
+                }
+                if (mobFile) {
+                     const p = mobFile.async("blob").then(blob => {
+                         const img = new Image();
+                         img.onload = () => updateMobSkin(mob.target, img);
+                         img.src = URL.createObjectURL(blob);
+                     });
+                     promises.push(p);
                 }
             });
 
@@ -1246,7 +1344,7 @@
             COAL_ORE: { id: 19, hardness: 3.0, toolClass: 'pickaxe' },
             IRON_ORE: { id: 25, hardness: 3.5, toolClass: 'pickaxe' },
             GOLD_ORE: { id: 26, hardness: 3.5, toolClass: 'pickaxe' },
-            DIAMOND_ORE: { id: 27, hardness: 4.0, toolClass: 'pickaxe' },
+            DIAMOND_ORE: { id: 27, hardness: 4.0, toolClass: 'pickaxe', drop: 43 }, // FIX: Drops Diamond (43)
 
             CHEST: { id: 28, hardness: 2.5, toolClass: 'axe' },
             SAND_BRICK: { id: 29, hardness: 2.0, toolClass: 'pickaxe' },
@@ -1340,10 +1438,25 @@
 
             if (id === 28) return [0, 8]; if (id === 29) return [2, 8]; if (id === 30) return [3, 8];
             if (id === 31) return [0, 9]; if (id === 32) return [1, 9]; if (id === 33) return [3, 9];
+            if (id === 34) return [0, 10]; // Furnace
 
             // Items (Rows 5+)
             if (id === 20) return [0, 5]; if (id === 21) return [1, 5]; if (id === 22) return [2, 5];
             if (id === 23) return [3, 5]; if (id === 24) return [0, 6];
+
+            // Swords (Rows 11-12)
+            if (id === 35) return [0, 11]; // Wood Sword
+            if (id === 36) return [1, 11]; // Stone Sword
+            if (id === 37) return [2, 11]; // Iron Sword
+            if (id === 38) return [3, 11]; // Gold Sword
+            if (id === 39) return [0, 12]; // Diamond Sword
+
+            // Rare Items (Rows 10, 12)
+            if (id === 40) return [2, 10]; // Golem Eye
+            if (id === 41) return [1, 12]; // Iron Ingot
+            if (id === 42) return [2, 12]; // Gold Ingot
+            if (id === 43) return [3, 12]; // Diamond
+
             return [0, 0];
         };
 
@@ -1722,16 +1835,19 @@
                 const r = Math.random();
 
                 if (biome === 'DESERT') {
-                    if (r < 0.8) mobType = 'husk'; // Replaced Skeleton with more Husks
+                    if (r < 0.8) mobType = 'husk'; 
                     else mobType = 'sand_defender';
                 } else if (biome === 'SNOW') {
-                    if (r < 0.4) mobType = 'zombie'; // Zombies in snow too?
+                    if (r < 0.3) mobType = 'zombie'; 
                     else if (r < 0.6) mobType = 'snow_defender';
-                    else mobType = 'skeleton';
+                    else if (r < 0.8) mobType = 'cow'; // Cows in snow
+                    else mobType = 'sheep'; // Sheep in snow
                 } else {
                     // Plains/Jungle
-                    if (r < 0.5) mobType = 'pig';
-                    else if (r < 0.8) mobType = 'zombie'; // Removed Human (White pale guy)
+                    if (r < 0.3) mobType = 'pig';
+                    else if (r < 0.5) mobType = 'cow';
+                    else if (r < 0.7) mobType = 'sheep';
+                    else if (r < 0.85) mobType = 'zombie'; 
                     else mobType = 'skeleton';
                 }
 
@@ -2097,9 +2213,9 @@
         function generateLoot() {
             const items = Array(CONTAINER_SIZE).fill().map(() => ({ type: 0, count: 0 }));
             const lootTable = [
-                { type: BLOCKS.DIAMOND_ORE.id, count: [1, 3] },
-                { type: BLOCKS.GOLD_ORE.id, count: [2, 5] },
-                { type: BLOCKS.IRON_ORE.id, count: [3, 8] },
+                { type: BLOCKS.DIAMOND.id, count: [1, 3] }, // FIX: Chests contain Diamond
+                { type: BLOCKS.GOLD_INGOT.id, count: [2, 5] }, // FIX: Chests contain Gold Ingot
+                { type: BLOCKS.IRON_INGOT.id, count: [3, 8] }, // FIX: Chests contain Iron Ingot
                 { type: BLOCKS.STICK.id, count: [5, 12] },
                 { type: BLOCKS.MELON.id, count: [2, 6] },
                 { type: BLOCKS.TNT.id, count: [1, 2] },
@@ -3035,10 +3151,12 @@
 
             if (BLOCKS[Object.keys(BLOCKS).find(k => BLOCKS[k].id === item.type)].isItem) return;
 
+            // FIX: Restore missing logic for placing blocks
             const p = hit.point.clone().add(hit.face.normal.clone().multiplyScalar(0.1));
             const bx = Math.floor(p.x), by = Math.floor(p.y), bz = Math.floor(p.z);
             const px = Math.floor(camera.position.x), py = Math.floor(camera.position.y), pz = Math.floor(camera.position.z);
 
+            // Prevent placing block inside player
             if (!(bx === px && bz === pz && (by === py || by === py - 1))) {
                 world.setBlock(bx, by, bz, item.type);
                 item.count--;
@@ -3047,7 +3165,20 @@
             }
         }
 
-        // --- GAME LOOP ---
+        // Auto Save Interval
+        setInterval(() => {
+            // Save if there are changes or every 30s for player stats
+            const btn = document.getElementById('save-btn');
+            if (btn) btn.click();
+        }, 30000);
+
+        // FIX: Save immediately when closing the tab/window
+        window.addEventListener('beforeunload', () => {
+             const btn = document.getElementById('save-btn');
+             if(btn) btn.click();
+        });
+
+        // INIT SEQUENCE
         initUI();
         world.update(new THREE.Vector3(0, 0, 0));
         camera.position.set(0, 100, 0); // Start higher
@@ -3273,7 +3404,7 @@
         });
 
         animate();
-    </script>
+       </script>
 </body>
 
 </html>
