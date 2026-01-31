@@ -1,0 +1,123 @@
+// --- AUTO TEXTURE LOADER FOR GITHUB ---
+        // 1. Hide the manual button since we are auto-loading
+        document.getElementById('texture-btn').style.display = 'none';
+
+        // 2. Define the mapping (same as before)
+        const TEXTURE_MAP = [
+            [0, 0, ['grass_block_top', 'grass_top']],
+            [1, 0, ['stone']],
+            [2, 0, ['dirt']],
+            [3, 0, ['oak_log', 'log_oak']],
+            [0, 1, ['oak_log_top', 'log_oak_top']],
+            [1, 1, ['oak_leaves', 'leaves_oak']],
+            [2, 1, ['sand']],
+            [3, 1, ['snow']],
+            [0, 2, ['oak_planks', 'planks_oak']],
+            [1, 2, ['bricks', 'brick']],
+            [2, 2, ['cactus_side']],
+            [3, 2, ['grass_block_side', 'grass_side']],
+            [0, 3, ['cobblestone']],
+            [1, 3, ['crafting_table_side']],
+            [2, 3, ['crafting_table_top']],
+            [3, 3, ['bedrock']],
+            [0, 4, ['jungle_log', 'log_jungle']],
+            [1, 4, ['jungle_leaves', 'leaves_jungle']],
+            [2, 4, ['melon_side']],
+            [3, 4, ['melon_top']],
+            [0, 5, ['stick']],
+            [1, 5, ['wooden_pickaxe', 'wood_pickaxe']],
+            [2, 5, ['stone_pickaxe']],
+            [3, 5, ['wooden_shovel', 'wood_shovel']],
+            [0, 6, ['stone_shovel']],
+            [0, 7, ['coal_ore']],
+            [1, 7, ['iron_ore']],
+            [2, 7, ['gold_ore']],
+            [3, 7, ['diamond_ore']],
+            [0, 8, ['chest_side', 'normal', 'chest_normal']],
+            [1, 8, ['chest_top', 'normal', 'chest_normal']],
+            [2, 8, ['sandstone']],
+            [1, 9, ['tnt_side']],
+            [2, 9, ['tnt_top']],
+            [3, 9, ['cobweb', 'web']],
+            [0, 10, ['furnace_front_on', 'furnace_front']],
+            [1, 10, ['furnace_side']],
+            [2, 10, ['ender_eye']],
+            [0, 11, ['wooden_sword', 'wood_sword']],
+            [1, 11, ['stone_sword']],
+            [2, 11, ['iron_sword']],
+            [3, 11, ['golden_sword', 'gold_sword']],
+            [0, 12, ['diamond_sword']],
+            [1, 12, ['iron_ingot']],
+            [2, 12, ['gold_ingot']],
+            [3, 12, ['diamond']]
+        ];
+
+        // 3. Automatically Fetch the Zip file
+        // IMPORTANT: Ensure 'faithful.zip' is uploaded to your repo!
+        fetch('faithful.zip')
+            .then(response => {
+                if (!response.ok) throw new Error("Texture pack not found");
+                return response.blob();
+            })
+            .then(JSZip.loadAsync)
+            .then(zip => {
+                const ctx = atlasCanvas.getContext('2d');
+                const promises = [];
+
+                TEXTURE_MAP.forEach(mapping => {
+                    const [col, row, names] = mapping;
+                    let foundFile = null;
+
+                    for (const name of names) {
+                        const regex = new RegExp(`(?:^|/)${name}\\.png$`, 'i');
+                        const match = Object.keys(zip.files).find(path => regex.test(path) && !path.includes('__MACOSX'));
+                        if (match) {
+                            foundFile = zip.files[match];
+                            break;
+                        }
+                    }
+
+                    if (foundFile) {
+                        const p = foundFile.async("blob").then(blob => {
+                            return new Promise(resolve => {
+                                const img = new Image();
+                                img.onload = () => {
+                                    const B = 64; 
+                                    ctx.clearRect(col * B, row * B, B, B);
+                                    
+                                    // TINTING LOGIC
+                                    const isFoliage = names.some(n => n.includes('grass_block_top') || n.includes('leaves') || n.includes('grass_top'));
+                                    if (isFoliage) {
+                                        const tC = document.createElement('canvas');
+                                        tC.width = B; tC.height = B;
+                                        const tCtx = tC.getContext('2d');
+                                        tCtx.drawImage(img, 0, 0, B, B);
+                                        tCtx.globalCompositeOperation = 'multiply';
+                                        tCtx.fillStyle = '#91BD59'; 
+                                        tCtx.fillRect(0, 0, B, B);
+                                        tCtx.globalCompositeOperation = 'destination-in';
+                                        tCtx.drawImage(img, 0, 0, B, B);
+                                        ctx.drawImage(tC, col * B, row * B);
+                                    } else {
+                                        ctx.drawImage(img, col * B, row * B, B, B);
+                                    }
+                                    resolve();
+                                };
+                                img.src = URL.createObjectURL(blob);
+                            });
+                        });
+                        promises.push(p);
+                    }
+                });
+
+                Promise.all(promises).then(() => {
+                    textureAtlas.needsUpdate = true;
+                    document.querySelectorAll('.slot-icon, .craft-icon').forEach(el => {
+                        el.style.backgroundImage = `url(${atlasCanvas.toDataURL()})`;
+                    });
+                    console.log("Auto-loaded Faithful textures!");
+                });
+            })
+            .catch(err => {
+                console.log("Could not auto-load textures (using default):", err);
+            });
