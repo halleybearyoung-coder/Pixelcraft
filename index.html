@@ -550,6 +550,13 @@
         
         <button id="texture-btn">Load Texture Pack (Zip/Png)</button>
         <input type="file" id="texture-input" style="display:none" accept=".zip,image/*">
+
+        <!-- FIX: Restored Save/Reset Buttons -->
+        <div style="margin-top: 10px; display: flex; gap: 10px; pointer-events: auto;">
+            <button id="save-btn" style="background:#4CAF50; color:white; border:none; padding:10px; cursor:pointer; border-radius: 4px;">Save Game</button>
+            <button id="reset-btn" style="background:#D32F2F; color:white; border:none; padding:10px; cursor:pointer; border-radius: 4px;">Reset World</button>
+        </div>
+        <div id="save-status" style="margin-top:5px; font-size:12px; color:#aaa; min-height: 20px;"></div>
     </div>
 
     <div id="loading">Generating World...</div>
@@ -3170,15 +3177,13 @@
 
         // Auto Save Interval
         setInterval(() => {
-            // Save if there are changes or every 2 seconds for player stats
-            const btn = document.getElementById('save-btn');
-            if (btn) btn.click();
-        }, 2000); // Changed from 30000 to 2000
+            // FIX: Call function directly, do NOT click button (fixes PointerLock error)
+            if (typeof saveGame === 'function') saveGame();
+        }, 2000);
 
         // FIX: Save immediately when closing the tab/window
         window.addEventListener('beforeunload', () => {
-             const btn = document.getElementById('save-btn');
-             if(btn) btn.click();
+             if (typeof saveGame === 'function') saveGame();
         });
 
         // INIT SEQUENCE
@@ -3364,8 +3369,9 @@
                 direction.x = Number(moveRight) - Number(moveLeft);
                 direction.normalize();
 
-                if (moveForward || moveBackward) velocity.z -= direction.z * (100.0 * moveSpeedMultiplier) * delta;
-                if (moveLeft || moveRight) velocity.x -= direction.x * (100.0 * moveSpeedMultiplier) * delta;
+                // FIX: Use the calculated 'speed' variable (acceleration = speed * drag)
+                if (moveForward || moveBackward) velocity.z -= direction.z * (speed * 10.0) * delta;
+                if (moveLeft || moveRight) velocity.x -= direction.x * (speed * 10.0) * delta;
 
                 controls.moveRight(-velocity.x * delta);
                 if (checkCollision(camera.position.x, camera.position.y, camera.position.z)) {
