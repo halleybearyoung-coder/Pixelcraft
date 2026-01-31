@@ -3020,8 +3020,10 @@
             controls.lock();
         });
 
+        // FIX: Corrected Logic - Hide menu when locked (playing), Show menu when unlocked (paused)
         controls.addEventListener('lock', () => {
-            blocker.style.display = 'flex';
+            prevTime = performance.now(); // Reset time to prevent lag spike
+            blocker.style.display = 'none';
             isInventoryOpen = false;
             isContainerOpen = false;
             document.getElementById('inventory-screen').style.display = 'none';
@@ -3031,8 +3033,9 @@
         });
 
         controls.addEventListener('unlock', () => {
+            // Only show main menu if we aren't in a specific UI (inventory/chat)
             if (!isInventoryOpen && !isChatOpen && !isContainerOpen) {
-                blocker.style.display = 'none';
+                blocker.style.display = 'flex';
             }
         });
 
@@ -3167,10 +3170,10 @@
 
         // Auto Save Interval
         setInterval(() => {
-            // Save if there are changes or every 30s for player stats
+            // Save if there are changes or every 2 seconds for player stats
             const btn = document.getElementById('save-btn');
             if (btn) btn.click();
-        }, 30000);
+        }, 2000); // Changed from 30000 to 2000
 
         // FIX: Save immediately when closing the tab/window
         window.addEventListener('beforeunload', () => {
