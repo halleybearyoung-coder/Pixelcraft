@@ -2499,40 +2499,57 @@
                         const gx = cx * this.cellSize + x;
                         const gz = cz * this.cellSize + z;
 
+                        // FIX: Smooth Biome Blending Logic
                         let bVal = biomeNoise.noise2D(gx * 0.002, gz * 0.002);
                         let humid = biomeNoise.noise2D(gx * 0.002 + 100, gz * 0.002 + 100);
-
-                        let biome = 'PLAINS';
-                        if (bVal > 0.5) biome = 'DESERT';
-                        else if (bVal < -0.5) biome = 'SNOW';
-                        else if (humid > 0.3 && bVal > -0.2 && bVal < 0.3) biome = 'JUNGLE';
-
                         const n = noise.noise2D(gx * 0.02, gz * 0.02);
                         const m = noise.noise2D(gx * 0.1, gz * 0.1);
 
-                        let height = 0;
+                        const baseHeight = 65;
+
+                        // 1. Calculate Target Heights for all biomes at this spot
+                        const hPlains = (n * 8) + (m * 2) + baseHeight + 5;
+                        const hDesert = (n * 5) + (m * 2) + baseHeight;
+                        const hSnow = (n * 15) + (m * 5) + baseHeight + 10;
+                        const hJungle = (n * 20) + (m * 10) + baseHeight + 10;
+
+                        // 2. Calculate Weights (Smooth Transitions)
+                        let wDesert = 0, wSnow = 0, wJungle = 0;
+
+                        // Desert starts mixing in at 0.2, fully dominant at 0.6
+                        if (bVal > 0.2) wDesert = Math.min(1, (bVal - 0.2) * 2.5);
+                        
+                        // Snow starts mixing in at -0.2, fully dominant at -0.6
+                        if (bVal < -0.2) wSnow = Math.min(1, (-bVal - 0.2) * 2.5);
+                        
+                        // Jungle mixes in high humidity, middle temp
+                        if (humid > 0.2 && Math.abs(bVal) < 0.4) wJungle = Math.min(1, (humid - 0.2) * 2.5);
+
+                        // Normalize weights
+                        let totalSpecial = wDesert + wSnow + wJungle;
+                        if (totalSpecial > 1) {
+                            wDesert /= totalSpecial; 
+                            wSnow /= totalSpecial; 
+                            wJungle /= totalSpecial;
+                            totalSpecial = 1;
+                        }
+                        const wPlains = 1 - totalSpecial;
+
+                        // 3. Blend Height (Weighted Average)
+                        const height = Math.floor(
+                            (hDesert * wDesert) + 
+                            (hSnow * wSnow) + 
+                            (hJungle * wJungle) + 
+                            (hPlains * wPlains)
+                        );
+
+                        // 4. Determine Block Type (Discrete based on dominance)
                         let surfaceBlock = BLOCKS.GRASS.id;
                         let subSurface = BLOCKS.DIRT.id;
 
-                        const baseHeight = 65;
-
-                        if (biome === 'DESERT') {
-                            height = Math.floor((n * 5) + (m * 2) + baseHeight);
-                            surfaceBlock = BLOCKS.SAND.id;
-                            subSurface = BLOCKS.SAND.id;
-                        } else if (biome === 'SNOW') {
-                            height = Math.floor((n * 15) + (m * 5) + baseHeight + 10);
-                            surfaceBlock = BLOCKS.SNOW.id;
-                            subSurface = BLOCKS.DIRT.id;
-                        } else if (biome === 'JUNGLE') {
-                            height = Math.floor((n * 20) + (m * 10) + baseHeight + 10);
-                            surfaceBlock = BLOCKS.GRASS.id;
-                            subSurface = BLOCKS.DIRT.id;
-                        } else {
-                            height = Math.floor((n * 8) + (m * 2) + baseHeight + 5);
-                            surfaceBlock = BLOCKS.GRASS.id;
-                            subSurface = BLOCKS.DIRT.id;
-                        }
+                        if (wDesert > 0.5) { surfaceBlock = BLOCKS.SAND.id; subSurface = BLOCKS.SAND.id; }
+                        else if (wSnow > 0.5) { surfaceBlock = BLOCKS.SNOW.id; }
+                        // Default Plains/Jungle is Grass/Dirt
 
                         for (let y = 0; y < CHUNK_HEIGHT; y++) {
                             let type = 0;
