@@ -181,6 +181,8 @@ const maxHealth = 10;
 const CHUNK_SIZE = 16;
 const CHUNK_HEIGHT = 128;
 const DRAW_DISTANCE = 5;
+const DAY_LENGTH = 1200; // 20 minutes (like Minecraft)
+let dayTime = 0; // 0 to DAY_LENGTH
 
 async function callGemini(prompt, systemInstruction = "") {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
@@ -1120,6 +1122,39 @@ class Mob {
     update(delta, world, playerPos) {
         if (this.dead) return;
 
+        // --- SUNLIGHT BURNING ---
+        // Burn if: Hostile AND NOT Husk AND NOT Defender AND Daylight AND Exposed
+        if (this.isHostile && this.type !== 'husk' && this.type !== 'sand_defender' && this.type !== 'snow_defender') {
+            // Check Daylight (Globals from animate loop would be better, but we calculate here for now or use global)
+            const timeProgress = (dayTime % DAY_LENGTH) / DAY_LENGTH;
+            const isDay = timeProgress > 0.1 && timeProgress < 0.4; // Peak day
+
+            if (isDay) {
+                // Check Sky Exposure
+                const tx = Math.floor(this.position.x);
+                const ty = Math.floor(this.position.y + 1); // Head level
+                const tz = Math.floor(this.position.z);
+
+                // Raycast up or check blocks
+                let exposed = true;
+                for (let y = ty; y < CHUNK_HEIGHT; y++) {
+                    if (world.getBlock(tx, y, tz) !== 0) {
+                        exposed = false;
+                        break;
+                    }
+                }
+
+                if (exposed) {
+                    this.takeDamage(0.05); // Burn damage
+                    // Visual Fire could go here (particle)
+                    if (Math.random() < 0.1) {
+                        // Simple particle placeholder or color flash
+                        this.mesh.children[0].material.color.setHex(0xFF4500); // Orange flash
+                    }
+                }
+            }
+        }
+
         // Behavior
         const distToPlayer = this.position.distanceTo(playerPos);
 
@@ -1360,11 +1395,18 @@ class MobManager {
         let mobType = 'pig';
         const r = Math.random();
 
+        // Time Check for Hostiles
+        const timeProgress = (dayTime % DAY_LENGTH) / DAY_LENGTH;
+        const isNight = timeProgress > 0.45 && timeProgress < 0.95; // Rough Night time
+
         if (biome === 'DESERT') {
-            if (r < 0.8) mobType = 'husk';
+            if (r < 0.8) mobType = 'husk'; // Husks can spawn day or night
             else mobType = 'sand_defender';
         } else if (biome === 'SNOW') {
-            if (r < 0.3) mobType = 'zombie';
+            if (r < 0.3) {
+                if (isNight) mobType = 'zombie';
+                else return; // Don't spawn hostile in day
+            }
             else if (r < 0.6) mobType = 'snow_defender';
             else if (r < 0.8) mobType = 'cow'; // Cows in snow
             else mobType = 'sheep'; // Sheep in snow
@@ -1373,8 +1415,19 @@ class MobManager {
             if (r < 0.3) mobType = 'pig';
             else if (r < 0.5) mobType = 'cow';
             else if (r < 0.7) mobType = 'sheep';
-            else if (r < 0.85) mobType = 'zombie';
-            else mobType = 'skeleton';
+            else if (r < 0.85) {
+                if (isNight) mobType = 'zombie';
+                else mobType = 'pig'; // fallback
+            }
+            else {
+                if (isNight) mobType = 'skeleton';
+                else return; // Don't spawn
+            }
+        }
+
+        // Final sanity check for Hostiles spawning in day (except Husk)
+        if (!isNight) {
+            if (mobType === 'zombie' || mobType === 'skeleton') return; // Don't spawn
         }
 
         this.mobs.push(new Mob(mobType, x, y, z, this.scene));
@@ -2819,6 +2872,53 @@ function animate() {
     const delta = Math.min((time - prevTime) / 1000, 0.1);
 
     prevTime = time;
+
+    // --- DAYLIGHT CYCLE ---
+    dayTime += delta;
+    if (dayTime > DAY_LENGTH) dayTime = 0;
+
+    const timeProgress = dayTime / DAY_LENGTH; // 0.0 to 1.0
+    // 0 = Sunrise, 0.25 = Noon, 0.5 = Sunset, 0.75 = Midnight
+
+    // Sun Movement (East to West)
+    const sunAngle = (timeProgress - 0.25) * Math.PI * 2; // Offset so 0.25 is top (-PI/2 to PI/2 logic ish)
+    // Actually: 
+    // at 0 (Sunrise), we want sun at horizon (X+ or Z+?)
+    // Let's say Sun rises at X+ (50, 0, 0)
+    // Noon (0.25), Sun at (0, 100, 0)
+    // Sunset (0.5), Sun at (-50, 0, 0)
+
+    // We can use sin/cos
+    const sunX = Math.cos(timeProgress * Math.PI * 2 + Math.PI) * 100; // Starts at -100? No.
+    const sunY = Math.sin(timeProgress * Math.PI * 2) * 100; // 0->0, 0.25->100, 0.5->0, 0.75->-100
+    // Adjust phase so 0=Sunrise (Y=0, increasing)
+    // sin(0) = 0.
+
+    dirLight.position.set(Math.cos(timeProgress * Math.PI * 2) * 100, Math.sin(timeProgress * Math.PI * 2) * 100, 20);
+
+    // Sky Color
+    const isDay = timeProgress < 0.5;
+    const isNight = !isDay;
+
+    let skyColor = new THREE.Color(0x87CEEB); // Noon Blue
+    if (timeProgress < 0.1) { // Sunrise
+        skyColor.setHSL(0.05, 1, 0.6); // Orange-ish
+        skyColor.lerp(new THREE.Color(0x87CEEB), timeProgress * 10);
+    } else if (timeProgress > 0.4 && timeProgress < 0.5) { // Sunset
+        skyColor.setHSL(0.02, 1, 0.5);
+    } else if (timeProgress >= 0.5) { // Night
+        skyColor.setHex(0x000000);
+        // Maybe some moonlight blue
+        skyColor.lerp(new THREE.Color(0x050510), 0.5);
+    }
+
+    scene.background = skyColor;
+    scene.fog.color = skyColor;
+
+    // Light Intensity
+    const sunIntensity = Math.max(0, Math.sin(timeProgress * Math.PI * 2));
+    dirLight.intensity = sunIntensity * 0.8;
+    ambientLight.intensity = 0.2 + (sunIntensity * 0.5);
 
     if (controls.isLocked) {
         camera.fov = sprint ? 85 : 75;
