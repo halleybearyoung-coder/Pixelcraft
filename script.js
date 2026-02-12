@@ -3,130 +3,131 @@ import { PointerLockControls } from 'three/examples/jsm/controls/PointerLockCont
 
 const apiKey = ""; // API Key
 
+class SaveManager {
     static dbName = 'PixelcraftDB';
     static version = 3; // Bumped to 3 for 'worlds' store
     static db = null;
     static currentWorldId = null; // 'world_TIMESTAMP'
 
     static async init() {
-    return new Promise((resolve, reject) => {
-        const request = indexedDB.open(this.dbName, this.version);
-        request.onerror = e => { console.error("DB Error", e); resolve(); };
-        request.onsuccess = e => {
-            this.db = e.target.result;
-            resolve();
-        };
-        request.onupgradeneeded = e => {
-            const db = e.target.result;
-            if (!db.objectStoreNames.contains('player')) db.createObjectStore('player');
-            if (!db.objectStoreNames.contains('chunks')) db.createObjectStore('chunks');
-            // New store for world metadata
-            if (!db.objectStoreNames.contains('worlds')) db.createObjectStore('worlds', { keyPath: 'id' });
-        };
-    });
-}
+        return new Promise((resolve, reject) => {
+            const request = indexedDB.open(this.dbName, this.version);
+            request.onerror = e => { console.error("DB Error", e); resolve(); };
+            request.onsuccess = e => {
+                this.db = e.target.result;
+                resolve();
+            };
+            request.onupgradeneeded = e => {
+                const db = e.target.result;
+                if (!db.objectStoreNames.contains('player')) db.createObjectStore('player');
+                if (!db.objectStoreNames.contains('chunks')) db.createObjectStore('chunks');
+                // New store for world metadata
+                if (!db.objectStoreNames.contains('worlds')) db.createObjectStore('worlds', { keyPath: 'id' });
+            };
+        });
+    }
 
     static async listWorlds() {
-    if (!this.db) return [];
-    return new Promise(resolve => {
-        const tx = this.db.transaction(['worlds'], 'readonly');
-        const store = tx.objectStore('worlds');
-        const req = store.getAll();
-        req.onsuccess = () => resolve(req.result || []);
-        req.onerror = () => resolve([]);
-    });
-}
+        if (!this.db) return [];
+        return new Promise(resolve => {
+            const tx = this.db.transaction(['worlds'], 'readonly');
+            const store = tx.objectStore('worlds');
+            const req = store.getAll();
+            req.onsuccess = () => resolve(req.result || []);
+            req.onerror = () => resolve([]);
+        });
+    }
 
     static async createWorld(name) {
-    if (!this.db) return null;
-    const id = 'world_' + Date.now();
-    const worldData = {
-        id: id,
-        name: name,
-        created: Date.now(),
-        lastPlayed: Date.now()
-    };
-    const tx = this.db.transaction(['worlds'], 'readwrite');
-    tx.objectStore('worlds').add(worldData);
-    return new Promise(resolve => {
-        tx.oncomplete = () => resolve(id);
-    });
-}
+        if (!this.db) return null;
+        const id = 'world_' + Date.now();
+        const worldData = {
+            id: id,
+            name: name,
+            created: Date.now(),
+            lastPlayed: Date.now()
+        };
+        const tx = this.db.transaction(['worlds'], 'readwrite');
+        tx.objectStore('worlds').add(worldData);
+        return new Promise(resolve => {
+            tx.oncomplete = () => resolve(id);
+        });
+    }
 
     static async deleteWorld(id) {
-    if (!this.db) return;
-    // 1. Delete Metadata
-    const tx = this.db.transaction(['worlds'], 'readwrite');
-    tx.objectStore('worlds').delete(id);
+        if (!this.db) return;
+        // 1. Delete Metadata
+        const tx = this.db.transaction(['worlds'], 'readwrite');
+        tx.objectStore('worlds').delete(id);
 
-    // 2. Delete Chunks & Player data for this world (Prefix key logic would be better, but for now we might leave junk or need a cleaner index)
-    // Since we are using a simple KV store for chunks with keys like "x,z", supporting multiple worlds requires prefixing keys!
-    // FIX: existing chunks are 0,0. We need world_id/0,0
-    // We will simple rely on prefixing in save/load methods from now on.
-    // To truly delete, we'd need to iterate all keys. For prototype, we settle for just hiding the world from the list.
-}
+        // 2. Delete Chunks & Player data for this world (Prefix key logic would be better, but for now we might leave junk or need a cleaner index)
+        // Since we are using a simple KV store for chunks with keys like "x,z", supporting multiple worlds requires prefixing keys!
+        // FIX: existing chunks are 0,0. We need world_id/0,0
+        // We will simple rely on prefixing in save/load methods from now on.
+        // To truly delete, we'd need to iterate all keys. For prototype, we settle for just hiding the world from the list.
+    }
 
     static async savePlayer(data) {
-    if (!this.db || !this.currentWorldId) return;
-    const tx = this.db.transaction(['player'], 'readwrite');
-    tx.objectStore('player').put(data, this.currentWorldId); // Key = worldID
-}
+        if (!this.db || !this.currentWorldId) return;
+        const tx = this.db.transaction(['player'], 'readwrite');
+        tx.objectStore('player').put(data, this.currentWorldId); // Key = worldID
+    }
 
     static async loadPlayer() {
-    if (!this.db || !this.currentWorldId) return null;
-    return new Promise(resolve => {
-        const tx = this.db.transaction(['player'], 'readonly');
-        const req = tx.objectStore('player').get(this.currentWorldId);
-        req.onsuccess = () => resolve(req.result);
-        req.onerror = () => resolve(null);
-    });
-}
+        if (!this.db || !this.currentWorldId) return null;
+        return new Promise(resolve => {
+            const tx = this.db.transaction(['player'], 'readonly');
+            const req = tx.objectStore('player').get(this.currentWorldId);
+            req.onsuccess = () => resolve(req.result);
+            req.onerror = () => resolve(null);
+        });
+    }
 
     static async saveChunk(key, data) {
-    if (!this.db || !this.currentWorldId) return;
-    const tx = this.db.transaction(['chunks'], 'readwrite');
-    const dbKey = `${this.currentWorldId}/${key}`; // Prefix key
-    tx.objectStore('chunks').put(data, dbKey);
-}
+        if (!this.db || !this.currentWorldId) return;
+        const tx = this.db.transaction(['chunks'], 'readwrite');
+        const dbKey = `${this.currentWorldId}/${key}`; // Prefix key
+        tx.objectStore('chunks').put(data, dbKey);
+    }
 
     static async loadChunk(key) {
-    if (!this.db || !this.currentWorldId) return null;
-    return new Promise(resolve => {
-        const tx = this.db.transaction(['chunks'], 'readonly');
-        const dbKey = `${this.currentWorldId}/${key}`;
-        const req = tx.objectStore('chunks').get(dbKey);
-        req.onsuccess = () => resolve(req.result);
-        req.onerror = () => resolve(null);
-    });
-}
+        if (!this.db || !this.currentWorldId) return null;
+        return new Promise(resolve => {
+            const tx = this.db.transaction(['chunks'], 'readonly');
+            const dbKey = `${this.currentWorldId}/${key}`;
+            const req = tx.objectStore('chunks').get(dbKey);
+            req.onsuccess = () => resolve(req.result);
+            req.onerror = () => resolve(null);
+        });
+    }
 
     static async loadAllChunks() {
-    if (!this.db || !this.currentWorldId) return new Map();
-    return new Promise(resolve => {
-        const chunkMap = new Map();
-        const tx = this.db.transaction(['chunks'], 'readonly');
-        const store = tx.objectStore('chunks');
-        const req = store.openCursor();
-        const prefix = `${this.currentWorldId}/`;
-        req.onsuccess = (e) => {
-            const cursor = e.target.result;
-            if (cursor) {
-                if (typeof cursor.key === 'string' && cursor.key.startsWith(prefix)) {
-                    const localKey = cursor.key.substring(prefix.length);
-                    chunkMap.set(localKey, cursor.value);
+        if (!this.db || !this.currentWorldId) return new Map();
+        return new Promise(resolve => {
+            const chunkMap = new Map();
+            const tx = this.db.transaction(['chunks'], 'readonly');
+            const store = tx.objectStore('chunks');
+            const req = store.openCursor();
+            const prefix = `${this.currentWorldId}/`;
+            req.onsuccess = (e) => {
+                const cursor = e.target.result;
+                if (cursor) {
+                    if (typeof cursor.key === 'string' && cursor.key.startsWith(prefix)) {
+                        const localKey = cursor.key.substring(prefix.length);
+                        chunkMap.set(localKey, cursor.value);
+                    }
+                    cursor.continue();
+                } else {
+                    resolve(chunkMap);
                 }
-                cursor.continue();
-            } else {
-                resolve(chunkMap);
-            }
-        };
-    });
-}
+            };
+        });
+    }
 
     // Deprecated resetWorld in favor of deleteWorld
     static resetWorld() {
-    window.location.reload();
-}
+        window.location.reload();
+    }
 }
 
 // --- GAME STATE ---
