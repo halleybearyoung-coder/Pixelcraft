@@ -226,6 +226,15 @@ const globalMobMats = (() => {
 let playerHealth = 10;
 const maxHealth = 10;
 
+// --- CREATIVE MODE ---
+let isCreativeMode = false;
+let isFlying = false;
+let flySpeed = 15;
+let flyUpDown = false;
+let flyDownKey = false;
+let commandHistory = [];
+let commandHistoryIdx = -1;
+
 // --- CONFIGURATION ---
 const CHUNK_SIZE = 16;
 const CHUNK_HEIGHT = 128;
@@ -2450,12 +2459,58 @@ function checkCollision(x, y, z) {
 }
 
 const keyState = {};
+let lastSpaceTime = 0;
+
 document.addEventListener('keydown', (e) => {
     keyState[e.code] = true;
-    if (e.code === 'KeyE') toggleInventory(null, false);
+
+    // E = inventory
+    if (e.code === 'KeyE' && controls.isLocked) toggleInventory(null, false);
+
+    // T = open command console
+    if (e.code === 'KeyT' && controls.isLocked) {
+        openCommandConsole();
+        return;
+    }
+
+    // F3 = toggle creative mode
+    if (e.code === 'F3') {
+        e.preventDefault();
+        toggleCreativeMode();
+        return;
+    }
+
+    // Double-tap SPACE = toggle fly (creative only)
+    if (e.code === 'Space' && isCreativeMode) {
+        const now = performance.now();
+        if (now - lastSpaceTime < 300) {
+            isFlying = !isFlying;
+            velocity.y = 0;
+            showCommandFeedback(isFlying ? '✈ Flying ON' : '🚶 Flying OFF');
+        }
+        lastSpaceTime = now;
+    }
+
+    // Space = jump (survival) or fly up (creative flying)
+    if (e.code === 'Space') {
+        if (!isCreativeMode && canJump) { velocity.y = 12; canJump = false; keyState['Space'] = false; }
+        if (isCreativeMode && isFlying) flyUpDown = true;
+    }
+
+    // Hotbar
     if (e.key >= '1' && e.key <= '9') { selectedSlot = parseInt(e.key) - 1; updateUI(); }
 });
-document.addEventListener('keyup', (e) => { keyState[e.code] = false; });
+
+document.addEventListener('keyup', (e) => {
+    keyState[e.code] = false;
+    if (e.code === 'Space') flyUpDown = false;
+    if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') flyDownKey = false;
+});
+
+// Fly down with Shift in creative fly mode
+document.addEventListener('keydown', (e) => {
+    if (e.code === 'ShiftLeft' && isCreativeMode && isFlying) flyDownKey = true;
+});
 
 controls.addEventListener('lock', () => { prevTime = performance.now(); blocker.style.display = 'none'; });
 
@@ -2463,7 +2518,14 @@ function updateInputs() {
     moveForward = !!keyState['KeyW']; moveBackward = !!keyState['KeyS'];
     moveLeft = !!keyState['KeyA']; moveRight = !!keyState['KeyD'];
     sprint = !!keyState['ShiftLeft'];
-    if (keyState['Space']) { if (canJump) { velocity.y = 12; canJump = false; keyState['Space'] = false; } }
+    if (isCreativeMode && isFlying) {
+        flyUpDown = !!keyState['Space'];
+        flyDownKey = !!keyState['ShiftLeft'];
+        sprint = !!keyState['ControlLeft']; // Ctrl = fast fly
+    } else {
+        flyUpDown = false; flyDownKey = false;
+        if (keyState['Space']) { if (canJump) { velocity.y = 12; canJump = false; keyState['Space'] = false; } }
+    }
 }
 
 const oldRender = renderer.render;
@@ -2501,7 +2563,7 @@ function animate() {
         const bBelow = world.getBlock(bx, by - 1, bz);
         const bIn = world.getBlock(bx, by, bz);
 
-        if (bBelow === BLOCKS.SPIKE.id || bIn === BLOCKS.SPIKE.id) {
+        if (!isCreativeMode && (bBelow === BLOCKS.SPIKE.id || bIn === BLOCKS.SPIKE.id)) {
             spikeTimer += delta;
             if (spikeTimer > 0.5) { playerHealth -= 1; updateHealthUI(); showDamageOverlay(); spikeTimer = 0; }
         } else { spikeTimer = 0; }
@@ -2525,6 +2587,7 @@ function animate() {
                     const heldItem = inventory[selectedSlot];
                     const toolInfo = getBlockProps(heldItem.type);
                     if (toolInfo.isItem && toolInfo.toolType === props.toolClass) speed = toolInfo.multiplier;
+                    if (isCreativeMode) speed = 999; // Instant mine in creative
                     mineTimer += delta * speed;
                     const pct = Math.min(100, (mineTimer / props.hardness) * 100);
                     document.getElementById('mining-progress').style.width = pct + 'px';
@@ -2539,32 +2602,54 @@ function animate() {
             } else { mineTimer = 0; document.getElementById('mining-progress').style.width = '0px'; }
         }
 
-        const baseSpeed = sprint ? 10.0 : 5.0;
-        const speed = baseSpeed * moveSpeedMultiplier;
-        velocity.x -= velocity.x * 10.0 * delta;
-        velocity.z -= velocity.z * 10.0 * delta;
-        velocity.y -= 30.0 * delta;
+        if (isFlying && isCreativeMode) {
+            // --- CREATIVE FLY PHYSICS ---
+            const flyMoveSpeed = sprint ? flySpeed * 2.5 : flySpeed;
+            velocity.x -= velocity.x * 15.0 * delta;
+            velocity.z -= velocity.z * 15.0 * delta;
+            velocity.y -= velocity.y * 15.0 * delta;
 
-        const direction = new THREE.Vector3();
-        direction.z = Number(moveForward) - Number(moveBackward);
-        direction.x = Number(moveRight) - Number(moveLeft);
-        direction.normalize();
+            const direction = new THREE.Vector3();
+            direction.z = Number(moveForward) - Number(moveBackward);
+            direction.x = Number(moveRight) - Number(moveLeft);
+            direction.normalize();
+            if (moveForward || moveBackward) velocity.z -= direction.z * (flyMoveSpeed * 10.0) * delta;
+            if (moveLeft || moveRight) velocity.x -= direction.x * (flyMoveSpeed * 10.0) * delta;
+            if (flyUpDown) velocity.y += flyMoveSpeed * 10.0 * delta;
+            if (flyDownKey) velocity.y -= flyMoveSpeed * 10.0 * delta;
 
-        if (moveForward || moveBackward) velocity.z -= direction.z * (speed * 10.0) * delta;
-        if (moveLeft || moveRight) velocity.x -= direction.x * (speed * 10.0) * delta;
+            controls.moveRight(-velocity.x * delta);
+            controls.moveForward(-velocity.z * delta);
+            camera.position.y += velocity.y * delta;
+        } else {
+            // --- SURVIVAL PHYSICS ---
+            const baseSpeed = sprint ? 10.0 : 5.0;
+            const speed = baseSpeed * moveSpeedMultiplier;
+            velocity.x -= velocity.x * 10.0 * delta;
+            velocity.z -= velocity.z * 10.0 * delta;
+            velocity.y -= 30.0 * delta;
 
-        controls.moveRight(-velocity.x * delta);
-        if (checkCollision(camera.position.x, camera.position.y, camera.position.z)) { controls.moveRight(velocity.x * delta); velocity.x = 0; }
-        controls.moveForward(-velocity.z * delta);
-        if (checkCollision(camera.position.x, camera.position.y, camera.position.z)) { controls.moveForward(velocity.z * delta); velocity.z = 0; }
-        camera.position.y += velocity.y * delta;
-        if (checkCollision(camera.position.x, camera.position.y, camera.position.z)) {
-            camera.position.y -= velocity.y * delta;
-            if (velocity.y < 0) canJump = true;
-            velocity.y = 0;
+            const direction = new THREE.Vector3();
+            direction.z = Number(moveForward) - Number(moveBackward);
+            direction.x = Number(moveRight) - Number(moveLeft);
+            direction.normalize();
+
+            if (moveForward || moveBackward) velocity.z -= direction.z * (speed * 10.0) * delta;
+            if (moveLeft || moveRight) velocity.x -= direction.x * (speed * 10.0) * delta;
+
+            controls.moveRight(-velocity.x * delta);
+            if (checkCollision(camera.position.x, camera.position.y, camera.position.z)) { controls.moveRight(velocity.x * delta); velocity.x = 0; }
+            controls.moveForward(-velocity.z * delta);
+            if (checkCollision(camera.position.x, camera.position.y, camera.position.z)) { controls.moveForward(velocity.z * delta); velocity.z = 0; }
+            camera.position.y += velocity.y * delta;
+            if (checkCollision(camera.position.x, camera.position.y, camera.position.z)) {
+                camera.position.y -= velocity.y * delta;
+                if (velocity.y < 0) canJump = true;
+                velocity.y = 0;
+            }
+
+            if (camera.position.y < -30) { playerHealth = 0; updateHealthUI(); }
         }
-
-        if (camera.position.y < -30) { playerHealth = 0; updateHealthUI(); }
 
         mobManager.update(delta, camera.position);
         updateFurnace(delta);
@@ -2580,6 +2665,369 @@ window.addEventListener('resize', () => {
     renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
+// ============================================================
+// CREATIVE MODE
+// ============================================================
+
+function toggleCreativeMode() {
+    isCreativeMode = !isCreativeMode;
+    if (!isCreativeMode) { isFlying = false; velocity.y = 0; }
+    updateCreativeModeUI();
+    showCommandFeedback(isCreativeMode ? '🎨 Creative Mode ON  (F3 to toggle)' : '⚔️ Survival Mode ON  (F3 to toggle)');
+    // Show/hide creative hotbar extras
+    const bar = document.getElementById('hotbar');
+    bar.style.borderColor = isCreativeMode ? '#ffd700' : '#333';
+}
+
+// Called from the blocker menu buttons
+function setGamemodeFromMenu(mode) {
+    isCreativeMode = mode === 'creative';
+    isFlying = false;
+    velocity.y = 0;
+    const btnS = document.getElementById('btn-survival');
+    const btnC = document.getElementById('btn-creative');
+    if (btnS && btnC) {
+        btnS.style.background = isCreativeMode ? '#333' : '#4a90d9';
+        btnS.style.color = isCreativeMode ? '#aaa' : 'white';
+        btnS.style.borderColor = isCreativeMode ? '#555' : '#fff';
+        btnC.style.background = isCreativeMode ? '#c8a000' : '#333';
+        btnC.style.color = isCreativeMode ? '#000' : '#aaa';
+        btnC.style.borderColor = isCreativeMode ? '#fff' : '#555';
+    }
+}
+
+function updateCreativeModeUI() {
+    let badge = document.getElementById('creative-badge');
+    if (!badge) {
+        badge = document.createElement('div');
+        badge.id = 'creative-badge';
+        badge.style.cssText = `position:fixed;top:10px;right:10px;background:rgba(255,215,0,0.85);
+            color:#000;font-weight:bold;padding:6px 14px;border-radius:20px;font-size:14px;
+            z-index:100;pointer-events:none;transition:opacity 0.3s;`;
+        document.body.appendChild(badge);
+    }
+    if (isCreativeMode) {
+        badge.innerHTML = '🎨 CREATIVE' + (isFlying ? ' ✈' : '');
+        badge.style.opacity = '1';
+    } else {
+        badge.style.opacity = '0';
+    }
+}
+
+function showCommandFeedback(msg, isError = false) {
+    let fb = document.getElementById('cmd-feedback');
+    if (!fb) {
+        fb = document.createElement('div');
+        fb.id = 'cmd-feedback';
+        fb.style.cssText = `position:fixed;bottom:140px;left:50%;transform:translateX(-50%);
+            background:rgba(0,0,0,0.8);color:white;padding:8px 18px;border-radius:6px;
+            font-size:14px;z-index:200;pointer-events:none;transition:opacity 0.5s;border-left:4px solid #4caf50;`;
+        document.body.appendChild(fb);
+    }
+    fb.innerText = msg;
+    fb.style.borderLeftColor = isError ? '#f44336' : '#4caf50';
+    fb.style.opacity = '1';
+    clearTimeout(fb._t);
+    fb._t = setTimeout(() => fb.style.opacity = '0', 3000);
+}
+
+// ============================================================
+// COMMAND CONSOLE
+// ============================================================
+
+function openCommandConsole() {
+    if (document.getElementById('cmd-console')) return;
+    controls.unlock();
+
+    const overlay = document.createElement('div');
+    overlay.id = 'cmd-console';
+    overlay.style.cssText = `position:fixed;bottom:80px;left:50%;transform:translateX(-50%);
+        width:600px;z-index:300;display:flex;flex-direction:column;gap:0;`;
+
+    const output = document.createElement('div');
+    output.id = 'cmd-output';
+    output.style.cssText = `background:rgba(0,0,0,0.85);color:#aef;font-family:monospace;
+        font-size:13px;padding:8px 12px;max-height:160px;overflow-y:auto;
+        border:1px solid #555;border-bottom:none;border-radius:6px 6px 0 0;`;
+    output.innerHTML = '<div style="color:#ffd700">💬 Command Console — type /help for commands</div>';
+
+    const row = document.createElement('div');
+    row.style.cssText = `display:flex;`;
+
+    const prefix = document.createElement('span');
+    prefix.innerText = '/';
+    prefix.style.cssText = `background:#222;color:#ffd700;padding:8px 6px 8px 12px;
+        font-family:monospace;font-size:15px;border:1px solid #555;border-right:none;border-radius:0 0 0 6px;`;
+
+    const input = document.createElement('input');
+    input.id = 'cmd-input';
+    input.placeholder = 'help';
+    input.style.cssText = `flex:1;background:#111;color:#fff;border:1px solid #555;
+        border-left:none;border-right:none;padding:8px;font-family:monospace;font-size:15px;outline:none;`;
+
+    const btn = document.createElement('button');
+    btn.innerText = 'Run';
+    btn.style.cssText = `background:#2a6020;color:white;border:1px solid #555;
+        padding:8px 16px;cursor:pointer;font-size:14px;border-radius:0 0 6px 0;`;
+
+    row.appendChild(prefix); row.appendChild(input); row.appendChild(btn);
+    overlay.appendChild(output); overlay.appendChild(row);
+    document.body.appendChild(overlay);
+
+    const close = () => {
+        overlay.remove();
+        controls.lock();
+    };
+
+    btn.onclick = () => runCommand(input.value.trim(), output, input);
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { runCommand(input.value.trim(), output, input); }
+        if (e.key === 'Escape') close();
+        if (e.key === 'ArrowUp') {
+            commandHistoryIdx = Math.min(commandHistoryIdx + 1, commandHistory.length - 1);
+            if (commandHistory[commandHistoryIdx]) input.value = commandHistory[commandHistoryIdx];
+        }
+        if (e.key === 'ArrowDown') {
+            commandHistoryIdx = Math.max(commandHistoryIdx - 1, -1);
+            input.value = commandHistoryIdx >= 0 ? commandHistory[commandHistoryIdx] : '';
+        }
+        e.stopPropagation();
+    });
+
+    setTimeout(() => input.focus(), 50);
+}
+
+function cmdLog(output, msg, color = '#aef') {
+    const line = document.createElement('div');
+    line.style.color = color;
+    line.innerText = msg;
+    output.appendChild(line);
+    output.scrollTop = output.scrollHeight;
+}
+
+function runCommand(raw, output, input) {
+    if (!raw) return;
+    commandHistory.unshift(raw);
+    commandHistoryIdx = -1;
+    const full = raw.startsWith('/') ? raw.slice(1) : raw;
+    cmdLog(output, '> /' + full, '#ffd700');
+    input.value = '';
+
+    const parts = full.trim().split(/\s+/);
+    const cmd = parts[0].toLowerCase();
+    const args = parts.slice(1);
+
+    switch (cmd) {
+        case 'help':
+            cmdLog(output, '── Commands ──────────────────────────────', '#888');
+            cmdLog(output, '/creative          Toggle creative mode');
+            cmdLog(output, '/fly               Toggle flying');
+            cmdLog(output, '/give [id] [amt]   Give item (use block ID or name)');
+            cmdLog(output, '/give all          Give all items');
+            cmdLog(output, '/summon [mob]      Spawn mob at your location');
+            cmdLog(output, '/kill [mob/all]    Kill nearby mobs (or all)');
+            cmdLog(output, '/place [id] [x y z] Place a block at coords');
+            cmdLog(output, '/tp [x] [y] [z]   Teleport to coords');
+            cmdLog(output, '/tpblock           Teleport to top of current column');
+            cmdLog(output, '/time [day/night/0-1200]  Set time');
+            cmdLog(output, '/heal              Restore full health');
+            cmdLog(output, '/clear             Clear inventory');
+            cmdLog(output, '/explode [r]       Explode at current position');
+            cmdLog(output, '/fill [id] [r]     Fill a sphere with block');
+            cmdLog(output, '/killme            Instant death');
+            cmdLog(output, '/list              List all block IDs');
+            cmdLog(output, '/pos               Show your current position');
+            cmdLog(output, '/speed [n]         Set fly/move speed multiplier');
+            cmdLog(output, '/weather [clear/storm]  Change fog/sky');
+            break;
+
+        case 'creative':
+            toggleCreativeMode();
+            cmdLog(output, isCreativeMode ? '✅ Creative mode ON' : '✅ Survival mode ON', '#4caf50');
+            break;
+
+        case 'fly':
+            if (!isCreativeMode) { cmdLog(output, '❌ Enable creative mode first (/creative)', '#f44336'); break; }
+            isFlying = !isFlying;
+            velocity.y = 0;
+            updateCreativeModeUI();
+            cmdLog(output, isFlying ? '✈ Flying ON — Space=up, Shift=down, Ctrl=fast' : '🚶 Flying OFF', '#4caf50');
+            break;
+
+        case 'give': {
+            if (args[0] === 'all') {
+                // Give all blocks and items
+                const allIds = Object.values(BLOCKS).filter(b => b && b.id).map(b => b.id);
+                allIds.forEach(id => addToInventory(id, 64));
+                cmdLog(output, `✅ Gave all ${allIds.length} items (x64 each)`, '#4caf50');
+                break;
+            }
+            const itemArg = args[0];
+            const amt = parseInt(args[1]) || 1;
+            // Try by ID first, then by name
+            let blockId = parseInt(itemArg);
+            if (isNaN(blockId)) {
+                const key = Object.keys(BLOCKS).find(k => k.toLowerCase() === itemArg.toLowerCase());
+                if (key && BLOCKS[key].id) blockId = BLOCKS[key].id;
+            }
+            if (!blockId || isNaN(blockId)) { cmdLog(output, `❌ Unknown item: ${itemArg}`, '#f44336'); break; }
+            addToInventory(blockId, amt);
+            cmdLog(output, `✅ Gave ${amt}x ${getBlockName(blockId)}`, '#4caf50');
+            break;
+        }
+
+        case 'summon': {
+            const mobArg = (args[0] || 'pig').toLowerCase();
+            const validMobs = ['pig', 'zombie', 'skeleton', 'husk', 'snow_defender', 'sand_defender', 'ghost', 'revenant', 'human'];
+            const mobName = validMobs.find(m => m.startsWith(mobArg)) || mobArg;
+            const sx = camera.position.x + (Math.random() - 0.5) * 4;
+            const sz = camera.position.z + (Math.random() - 0.5) * 4;
+            const sy = camera.position.y + 1;
+            mobManager.mobs.push(new Mob(mobName, sx, sy, sz, scene));
+            cmdLog(output, `✅ Spawned ${mobName}`, '#4caf50');
+            break;
+        }
+
+        case 'kill': {
+            const killArg = (args[0] || 'all').toLowerCase();
+            let count = 0;
+            if (killArg === 'all') {
+                count = mobManager.mobs.length;
+                mobManager.mobs.forEach(m => { m.dead = true; m.mesh.visible = false; });
+                mobManager.mobs = [];
+            } else {
+                const before = mobManager.mobs.length;
+                mobManager.mobs.forEach(m => {
+                    if (m.type.toLowerCase().includes(killArg)) { m.dead = true; m.mesh.visible = false; count++; }
+                });
+                mobManager.mobs = mobManager.mobs.filter(m => !m.dead);
+            }
+            cmdLog(output, `✅ Killed ${count} mob(s)`, '#4caf50');
+            break;
+        }
+
+        case 'tp': {
+            const tx = parseFloat(args[0]), ty = parseFloat(args[1]), tz = parseFloat(args[2]);
+            if (isNaN(tx) || isNaN(ty) || isNaN(tz)) { cmdLog(output, '❌ Usage: /tp <x> <y> <z>', '#f44336'); break; }
+            camera.position.set(tx, ty, tz);
+            velocity.set(0, 0, 0);
+            cmdLog(output, `✅ Teleported to ${tx}, ${ty}, ${tz}`, '#4caf50');
+            break;
+        }
+
+        case 'tpblock': {
+            const cx = Math.floor(camera.position.x), cz = Math.floor(camera.position.z);
+            let topY = 0;
+            for (let y = CHUNK_HEIGHT - 1; y > 0; y--) {
+                if (world.getBlock(cx, y, cz) !== 0) { topY = y + 2; break; }
+            }
+            camera.position.y = topY;
+            velocity.set(0, 0, 0);
+            cmdLog(output, `✅ Teleported to surface at Y=${topY}`, '#4caf50');
+            break;
+        }
+
+        case 'place': {
+            const placeId = parseInt(args[0]);
+            const px = args[1] !== undefined ? parseInt(args[1]) : Math.floor(camera.position.x);
+            const py = args[2] !== undefined ? parseInt(args[2]) : Math.floor(camera.position.y);
+            const pz = args[3] !== undefined ? parseInt(args[3]) : Math.floor(camera.position.z);
+            if (isNaN(placeId)) { cmdLog(output, '❌ Usage: /place <blockId> [x y z]', '#f44336'); break; }
+            world.setBlock(px, py, pz, placeId);
+            cmdLog(output, `✅ Placed ${getBlockName(placeId)} at ${px},${py},${pz}`, '#4caf50');
+            break;
+        }
+
+        case 'time': {
+            const timeArg = args[0];
+            if (!timeArg) { cmdLog(output, `Current time: ${Math.floor(dayTime)} / ${DAY_LENGTH} (${(dayTime/DAY_LENGTH*100).toFixed(1)}%)`, '#aef'); break; }
+            if (timeArg === 'day') { dayTime = DAY_LENGTH * 0.05; cmdLog(output, '✅ Set to day', '#4caf50'); }
+            else if (timeArg === 'night') { dayTime = DAY_LENGTH * 0.55; cmdLog(output, '✅ Set to night', '#4caf50'); }
+            else if (timeArg === 'noon') { dayTime = DAY_LENGTH * 0.25; cmdLog(output, '✅ Set to noon', '#4caf50'); }
+            else if (timeArg === 'sunset') { dayTime = DAY_LENGTH * 0.45; cmdLog(output, '✅ Set to sunset', '#4caf50'); }
+            else {
+                const t = parseFloat(timeArg);
+                if (!isNaN(t)) { dayTime = Math.max(0, Math.min(DAY_LENGTH, t)); cmdLog(output, `✅ Time set to ${dayTime}`, '#4caf50'); }
+                else cmdLog(output, '❌ Usage: /time day|night|noon|sunset|0-1200', '#f44336');
+            }
+            break;
+        }
+
+        case 'heal':
+            playerHealth = maxHealth;
+            updateHealthUI();
+            cmdLog(output, '✅ Full health restored', '#4caf50');
+            break;
+
+        case 'clear':
+            for (let i = 0; i < INVENTORY_SIZE; i++) { inventory[i].type = 0; inventory[i].count = 0; }
+            updateUI();
+            cmdLog(output, '✅ Inventory cleared', '#4caf50');
+            break;
+
+        case 'explode': {
+            const rad = parseInt(args[0]) || 5;
+            world.explode(Math.floor(camera.position.x), Math.floor(camera.position.y - 2), Math.floor(camera.position.z), rad);
+            cmdLog(output, `✅ Exploded (radius ${rad})`, '#4caf50');
+            break;
+        }
+
+        case 'fill': {
+            const fillId = parseInt(args[0]);
+            const fillR = parseInt(args[1]) || 3;
+            if (isNaN(fillId)) { cmdLog(output, '❌ Usage: /fill <blockId> [radius]', '#f44336'); break; }
+            const fx = Math.floor(camera.position.x), fy = Math.floor(camera.position.y - 1), fz = Math.floor(camera.position.z);
+            let filled = 0;
+            for (let dx = -fillR; dx <= fillR; dx++) for (let dy = -fillR; dy <= fillR; dy++) for (let dz = -fillR; dz <= fillR; dz++) {
+                if (dx*dx+dy*dy+dz*dz <= fillR*fillR) { world.setBlock(fx+dx, fy+dy, fz+dz, fillId); filled++; }
+            }
+            cmdLog(output, `✅ Filled ${filled} blocks with ${getBlockName(fillId)}`, '#4caf50');
+            break;
+        }
+
+        case 'killme':
+            playerHealth = 0;
+            updateHealthUI();
+            cmdLog(output, '💀 You died.', '#f44336');
+            break;
+
+        case 'pos':
+            cmdLog(output, `📍 Position: X=${camera.position.x.toFixed(1)}, Y=${camera.position.y.toFixed(1)}, Z=${camera.position.z.toFixed(1)}`);
+            break;
+
+        case 'speed': {
+            const spd = parseFloat(args[0]);
+            if (isNaN(spd) || spd <= 0) { cmdLog(output, '❌ Usage: /speed <number>  (default: 15)', '#f44336'); break; }
+            flySpeed = spd;
+            cmdLog(output, `✅ Fly/move speed set to ${spd}`, '#4caf50');
+            break;
+        }
+
+        case 'list': {
+            cmdLog(output, '── Block IDs ──', '#888');
+            Object.entries(BLOCKS).forEach(([name, val]) => {
+                if (val && val.id) cmdLog(output, `  ${val.id.toString().padStart(3)} — ${name}`);
+            });
+            break;
+        }
+
+        case 'weather': {
+            const w = (args[0] || '').toLowerCase();
+            if (w === 'storm') {
+                scene.fog.near = 5; scene.fog.far = 30;
+                ambientLight.intensity = 0.15;
+                cmdLog(output, '🌩 Storm weather set', '#4caf50');
+            } else {
+                scene.fog.near = 20; scene.fog.far = (DRAW_DISTANCE * CHUNK_SIZE) - 10;
+                cmdLog(output, '☀️ Clear weather set', '#4caf50');
+            }
+            break;
+        }
+
+        default:
+            cmdLog(output, `❌ Unknown command: /${cmd}  — type /help`, '#f44336');
+    }
+}
 function saveGame() {
     if (typeof SaveManager === 'undefined' || typeof world === 'undefined') return;
     const pData = {
