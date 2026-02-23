@@ -599,9 +599,14 @@ function updateMobSkin(type, img) {
     }
 }
 
-function loadTexturePack(zip) {
+function loadTexturePack(zip, tileSize = 64) {
     const ctx = atlasCanvas.getContext('2d');
+    const B = 64; // atlas tile output size always 64x64
     const promises = [];
+
+    // Set nearest-neighbor filtering based on pack resolution
+    textureAtlas.magFilter = tileSize <= 16 ? THREE.NearestFilter : THREE.LinearFilter;
+    textureAtlas.minFilter = tileSize <= 16 ? THREE.NearestFilter : THREE.LinearFilter;
 
     TEXTURE_MAP.forEach(mapping => {
         const [col, row, names] = mapping;
@@ -616,20 +621,24 @@ function loadTexturePack(zip) {
                 return new Promise(resolve => {
                     const img = new Image();
                     img.onload = () => {
-                        const B = 64;
                         ctx.clearRect(col * B, row * B, B, B);
                         const isFoliage = names.some(n => n.includes('grass_block_top') || n.includes('leaves') || n.includes('grass_top'));
                         if (isFoliage) {
                             const tC = document.createElement('canvas'); tC.width = B; tC.height = B;
                             const tCtx = tC.getContext('2d');
-                            tCtx.drawImage(img, 0, 0, B, B);
+                            // Only use first tileSize×tileSize frame (animated textures have multiple frames stacked)
+                            tCtx.imageSmoothingEnabled = tileSize > 16;
+                            tCtx.drawImage(img, 0, 0, Math.min(img.width, img.height), Math.min(img.width, img.height), 0, 0, B, B);
                             tCtx.globalCompositeOperation = 'multiply';
                             tCtx.fillStyle = '#91BD59'; tCtx.fillRect(0, 0, B, B);
                             tCtx.globalCompositeOperation = 'destination-in';
-                            tCtx.drawImage(img, 0, 0, B, B);
+                            tCtx.drawImage(img, 0, 0, Math.min(img.width, img.height), Math.min(img.width, img.height), 0, 0, B, B);
                             ctx.drawImage(tC, col * B, row * B);
                         } else {
-                            ctx.drawImage(img, col * B, row * B, B, B);
+                            // Use first square frame only (handles animated PNG strips)
+                            const srcSize = Math.min(img.width, img.height);
+                            ctx.imageSmoothingEnabled = tileSize > 16;
+                            ctx.drawImage(img, 0, 0, srcSize, srcSize, col * B, row * B, B, B);
                         }
                         resolve();
                     };
@@ -646,7 +655,7 @@ function loadTexturePack(zip) {
             return new Promise(resolve => {
                 const img = new Image();
                 img.onload = () => {
-                    const scale = img.width / 64; const B = 64;
+                    const scale = img.width / 64;
                     ctx.clearRect(1 * B, 8 * B, B, B);
                     ctx.drawImage(img, 14 * scale, 0 * scale, 14 * scale, 14 * scale, 1 * B, 8 * B, B, B);
                     ctx.clearRect(0 * B, 8 * B, B, B);
@@ -689,20 +698,59 @@ function loadTexturePack(zip) {
         document.querySelectorAll('.slot-icon, .craft-icon').forEach(el => {
             el.style.backgroundImage = `url(${atlasURL})`;
         });
-        console.log("Texture Pack Loaded!");
+        console.log(`Texture Pack Loaded! (${tileSize}px tiles)`);
     });
 }
 
-fetch('Faithful 64x - December 2025 Release.zip')
-    .then(response => { if (response.ok) return response.blob(); else throw new Error("No auto-pack"); })
-    .then(JSZip.loadAsync)
-    .then(loadTexturePack)
-    .catch(e => console.log("Auto-load skipped:", e));
+// ============================================================
+// TEXTURE PACK LOADERS
+// ============================================================
 
+function setTexStatus(msg, color = '#8bc34a') {
+    const el = document.getElementById('tex-status');
+    if (el) { el.innerText = msg; el.style.color = color; }
+}
+
+// --- DEFAULT MINECRAFT button (16x16 textures from 1.21.11-template (1).zip) ---
+const btnMcDefault = document.getElementById('btn-mc-default');
+if (btnMcDefault) {
+    btnMcDefault.addEventListener('click', function(e) {
+        e.stopPropagation();
+        setTexStatus('⏳ Loading Default Minecraft textures...', '#ffd700');
+        fetch('1.21.11-template (1).zip')
+            .then(r => { if (!r.ok) throw new Error('File not found'); return r.blob(); })
+            .then(JSZip.loadAsync)
+            .then(zip => loadTexturePack(zip, 16))
+            .then(() => setTexStatus('✅ Default Minecraft loaded!', '#8bc34a'))
+            .catch(err => {
+                console.warn('Default MC pack error:', err);
+                setTexStatus('❌ Could not load — place "1.21.11-template (1).zip" next to index.html', '#f44336');
+            });
+    });
+}
+
+// --- FAITHFUL 64x button ---
+const btnFaithful = document.getElementById('btn-faithful');
+if (btnFaithful) {
+    btnFaithful.addEventListener('click', function(e) {
+        e.stopPropagation();
+        setTexStatus('⏳ Loading Faithful 64x textures...', '#ffd700');
+        fetch('Faithful 64x - December 2025 Release.zip')
+            .then(r => { if (!r.ok) throw new Error('File not found'); return r.blob(); })
+            .then(JSZip.loadAsync)
+            .then(zip => loadTexturePack(zip, 64))
+            .then(() => setTexStatus('✅ Faithful 64x loaded!', '#8bc34a'))
+            .catch(err => {
+                console.warn('Faithful pack error:', err);
+                setTexStatus('❌ Could not load — place "Faithful 64x - December 2025 Release.zip" next to index.html', '#f44336');
+            });
+    });
+}
+
+// --- CUSTOM PACK button (manual file picker) ---
 const texBtn = document.getElementById('texture-btn');
 if (texBtn) {
-    texBtn.innerText = "Load Texture Pack (Manual)";
-    texBtn.addEventListener('click', function (e) {
+    texBtn.addEventListener('click', function(e) {
         e.stopPropagation();
         document.getElementById('texture-input').click();
     });
@@ -711,25 +759,26 @@ if (texBtn) {
 const texInput = document.getElementById('texture-input');
 if (texInput) {
     texInput.addEventListener('click', e => e.stopPropagation());
-    texInput.addEventListener('change', function (e) {
+    texInput.addEventListener('change', function(e) {
         const file = e.target.files[0];
         if (!file) return;
+        setTexStatus('⏳ Loading custom pack...', '#ffd700');
         if (file.name.endsWith('.zip')) {
             JSZip.loadAsync(file).then(zip => {
-                loadTexturePack(zip).then(() => alert("Texture Pack Loaded!"));
+                loadTexturePack(zip).then(() => setTexStatus('✅ Custom pack loaded!', '#8bc34a'));
             });
         } else {
             const reader = new FileReader();
-            reader.onload = function (evt) {
+            reader.onload = function(evt) {
                 const img = new Image();
-                img.onload = function () {
+                img.onload = function() {
                     const ctx = atlasCanvas.getContext('2d');
                     ctx.clearRect(0, 0, atlasCanvas.width, atlasCanvas.height);
                     ctx.drawImage(img, 0, 0, atlasCanvas.width, atlasCanvas.height);
                     textureAtlas.needsUpdate = true;
                     atlasURL = atlasCanvas.toDataURL();
                     document.querySelectorAll('.slot-icon, .craft-icon').forEach(el => el.style.backgroundImage = `url(${atlasURL})`);
-                    alert("Atlas Loaded!");
+                    setTexStatus('✅ Custom atlas loaded!', '#8bc34a');
                 };
                 img.src = evt.target.result;
             };
@@ -737,6 +786,15 @@ if (texInput) {
         }
     });
 }
+
+// Auto-try Faithful on page load (silent fallback)
+fetch('Faithful 64x - December 2025 Release.zip')
+    .then(r => { if (r.ok) return r.blob(); throw new Error('no auto-pack'); })
+    .then(JSZip.loadAsync)
+    .then(zip => loadTexturePack(zip, 64))
+    .then(() => setTexStatus('✅ Faithful 64x auto-loaded', '#8bc34a'))
+    .catch(() => {});
+
 
 const BLOCKS = {
     AIR: 0,
@@ -2743,13 +2801,10 @@ function placeBlock() {
     }
 }
 
-setInterval(() => { if (typeof saveGame === 'function') saveGame(); }, 2000);
-window.addEventListener('beforeunload', () => { if (typeof saveGame === 'function') saveGame(); });
 
 initUI();
 world.update(new THREE.Vector3(0, 0, 0));
-camera.position.set(0, 100, 0);
-document.getElementById('loading').style.display = 'none';
+// NOTE: camera position and loading screen are controlled by the SaveManager init block at the bottom
 
 const velocity = new THREE.Vector3();
 let prevTime = performance.now();
@@ -3424,10 +3479,13 @@ function runCommand(raw, output, input) {
 function saveGame() {
     if (typeof SaveManager === 'undefined' || typeof world === 'undefined') return;
     const pData = {
-        x: camera.position.x, y: camera.position.y, z: camera.position.z,
-        rx: camera.rotation.x, ry: camera.rotation.y,
+        x: camera.position.x,
+        y: camera.position.y,
+        z: camera.position.z,
+        rx: camera.rotation.x,
+        ry: camera.rotation.y,
         health: typeof playerHealth !== 'undefined' ? playerHealth : 10,
-        inventory: typeof inventory !== 'undefined' ? inventory : [],
+        inventory: typeof inventory !== 'undefined' ? JSON.parse(JSON.stringify(inventory)) : [],
         chests: Array.from(world.chestData.entries())
     };
     SaveManager.savePlayer(pData);
@@ -3436,13 +3494,27 @@ function saveGame() {
         if (data) SaveManager.saveChunk(key, data);
     });
     world.dirtyChunks.clear();
+
+    // Update save status display
+    const ss = document.getElementById('save-status');
+    if (ss) {
+        const t = new Date();
+        ss.innerText = `💾 Saved at ${t.getHours()}:${String(t.getMinutes()).padStart(2,'0')}:${String(t.getSeconds()).padStart(2,'0')}`;
+    }
 }
 
 const saveBtn = document.getElementById('save-btn');
 if (saveBtn) { saveBtn.onclick = (e) => { e.stopPropagation(); saveGame(); }; }
 
 const resetBtn = document.getElementById('reset-btn');
-if (resetBtn) { resetBtn.onclick = (e) => { e.stopPropagation(); if (confirm("Reset World? All progress will be lost.")) SaveManager.resetWorld(); }; }
+if (resetBtn) {
+    resetBtn.onclick = (e) => {
+        e.stopPropagation();
+        if (confirm("Reset World? ALL progress, blocks, and items will be permanently deleted!")) {
+            SaveManager.resetWorld();
+        }
+    };
+}
 
 if (blocker) {
     blocker.onclick = (e) => { if (e.target === blocker && typeof controls !== 'undefined') controls.lock(); };
@@ -3450,21 +3522,62 @@ if (blocker) {
 
 if (typeof SaveManager !== 'undefined') {
     SaveManager.init().then(async () => {
+        // Load ALL saved chunk data first — this is what preserves the world across reloads
         if (typeof world !== 'undefined') await world.loadMetadata();
+
         const pData = await SaveManager.loadPlayer();
         if (pData) {
-            camera.position.set(pData.x, pData.y, pData.z);
-            camera.rotation.set(pData.rx, pData.ry, 0);
-            if (typeof playerHealth !== 'undefined') playerHealth = pData.health;
+            // Restore EXACT X and Z position — only Y is set to 100 for safety
+            // (player could have saved mid-air, in a cave, etc.)
+            const spawnX = pData.x || 0;
+            const spawnZ = pData.z || 0;
+
+            // Find safe spawn Y: start at 100, or find the surface above saved X/Z
+            let spawnY = 100;
+            // Generate the chunk they were in so we can find the surface
+            const chunkKey = `${Math.floor(spawnX / 16)},${Math.floor(spawnZ / 16)}`;
+            if (!world.chunkData.has(chunkKey)) {
+                world.chunkData.set(chunkKey, world.generateChunkData(Math.floor(spawnX / 16), Math.floor(spawnZ / 16)));
+            }
+            // Scan down from top to find surface
+            for (let testY = CHUNK_HEIGHT - 1; testY > 2; testY--) {
+                if (world.getBlock(Math.floor(spawnX), testY, Math.floor(spawnZ)) !== 0) {
+                    spawnY = testY + 2; // 2 blocks above surface
+                    break;
+                }
+            }
+            // Always clamp to at least Y=70 so player doesn't spawn underground
+            spawnY = Math.max(spawnY, 70);
+
+            camera.position.set(spawnX, spawnY, spawnZ);
+            camera.rotation.set(pData.rx || 0, pData.ry || 0, 0);
+
+            if (typeof playerHealth !== 'undefined') playerHealth = Math.max(1, pData.health || 10);
             if (typeof updateHealthUI === 'function') updateHealthUI();
+
             if (pData.inventory && typeof inventory !== 'undefined') {
-                for (let i = 0; i < 36; i++) if (pData.inventory[i]) inventory[i] = pData.inventory[i];
+                for (let i = 0; i < INVENTORY_SIZE; i++) {
+                    if (pData.inventory[i]) inventory[i] = pData.inventory[i];
+                }
             }
             if (typeof updateUI === 'function') updateUI();
-            if (pData.chests && typeof world !== 'undefined') pData.chests.forEach(([k, v]) => world.chestData.set(k, v));
+
+            if (pData.chests && typeof world !== 'undefined') {
+                pData.chests.forEach(([k, v]) => world.chestData.set(k, v));
+            }
+
+            // Show resume message on the blocker
+            const resumeEl = document.getElementById('resume-status');
+            if (resumeEl) {
+                resumeEl.innerText = `✅ World restored — ${spawnX.toFixed(0)}, ${spawnZ.toFixed(0)} | Click to continue`;
+            }
         } else {
+            // Brand new game
             camera.position.set(0, 100, 0);
+            const resumeEl = document.getElementById('resume-status');
+            if (resumeEl) resumeEl.innerText = '🌍 New world generated — Click to Play';
         }
+
         const loadEl = document.getElementById('loading');
         if (loadEl) loadEl.style.display = 'none';
         animate();
@@ -3473,5 +3586,7 @@ if (typeof SaveManager !== 'undefined') {
     animate();
 }
 
-setInterval(() => { if (typeof saveGame === 'function') saveGame(); }, 2000);
+// Auto-save every 5 seconds (increased from 2s to reduce IndexedDB pressure)
+setInterval(() => { if (typeof saveGame === 'function') saveGame(); }, 5000);
+// Always save before tab close / refresh
 window.addEventListener('beforeunload', () => { if (typeof saveGame === 'function') saveGame(); });
