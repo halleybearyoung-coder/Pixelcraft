@@ -2754,7 +2754,7 @@ blocker.addEventListener('click', () => { controls.lock(); });
 
 controls.addEventListener('lock', () => {
     prevTime = performance.now();
-    blocker.style.display = 'block';
+    blocker.style.display = 'none'; // hide home/pause screen when game starts
     isInventoryOpen = false; isContainerOpen = false;
     document.getElementById('inventory-screen').style.display = 'none';
     document.getElementById('container-screen').style.display = 'none';
@@ -2765,7 +2765,13 @@ controls.addEventListener('lock', () => {
 let suppressUnlockBlocker = false;
 controls.addEventListener('unlock', () => {
     if (suppressUnlockBlocker) { suppressUnlockBlocker = false; return; }
-    if (!isInventoryOpen && !isChatOpen && !isContainerOpen) blocker.style.display = 'flex';
+    // Show the home/pause screen and update save status
+    blocker.style.display = 'flex';
+    saveGame(); // auto-save whenever the player pauses
+    const resumeEl = document.getElementById('resume-status');
+    if (resumeEl && camera) {
+        resumeEl.innerText = `✅ Auto-saved — X:${camera.position.x.toFixed(0)} Z:${camera.position.z.toFixed(0)} | Click to Resume`;
+    }
 });
 
 const raycaster = new THREE.Raycaster();
@@ -2915,7 +2921,7 @@ document.addEventListener('keydown', (e) => {
         return;
     }
 
-    // Escape = close any open UI
+    // Escape = close open UI, or if nothing open → save + go to home/pause screen
     if (e.code === 'Escape') {
         if (isInventoryOpen) { toggleInventory(false); return; }
         if (isContainerOpen) {
@@ -2931,6 +2937,13 @@ document.addEventListener('keydown', (e) => {
             suppressUnlockBlocker = true;
             controls.lock(); return;
         }
+        // Nothing open — save and go to home/pause screen
+        if (controls.isLocked) {
+            saveGame();
+            suppressUnlockBlocker = false; // allow the unlock listener to show the blocker
+            controls.unlock();
+        }
+        return;
     }
 
     // T = open command console
@@ -3539,6 +3552,9 @@ function runCommand(raw, output, input) {
 }
 function saveGame() {
     if (typeof SaveManager === 'undefined' || typeof world === 'undefined') return;
+    if (!SaveManager.db) return; // DB not ready yet
+
+    // Save player state
     const pData = {
         x: camera.position.x,
         y: camera.position.y,
@@ -3550,17 +3566,18 @@ function saveGame() {
         chests: Array.from(world.chestData.entries())
     };
     SaveManager.savePlayer(pData);
-    world.dirtyChunks.forEach(key => {
-        const data = world.chunkData.get(key);
-        if (data) SaveManager.saveChunk(key, data);
+
+    // Save ALL loaded chunks — not just dirty ones — so world is always fully preserved
+    world.chunkData.forEach((data, key) => {
+        SaveManager.saveChunk(key, data);
     });
     world.dirtyChunks.clear();
 
-    // Update save status display
+    // Update save status
     const ss = document.getElementById('save-status');
     if (ss) {
         const t = new Date();
-        ss.innerText = `💾 Saved at ${t.getHours()}:${String(t.getMinutes()).padStart(2,'0')}:${String(t.getSeconds()).padStart(2,'0')}`;
+        ss.innerText = `💾 Saved ${t.getHours()}:${String(t.getMinutes()).padStart(2,'0')}:${String(t.getSeconds()).padStart(2,'0')}`;
     }
 }
 
@@ -3583,32 +3600,15 @@ if (blocker) {
 
 if (typeof SaveManager !== 'undefined') {
     SaveManager.init().then(async () => {
-        // Load ALL saved chunk data first — this is what preserves the world across reloads
+        // Load ALL saved chunks first — restores every block the player ever placed/broke
         if (typeof world !== 'undefined') await world.loadMetadata();
 
         const pData = await SaveManager.loadPlayer();
         if (pData) {
-            // Restore EXACT X and Z position — only Y is set to 100 for safety
-            // (player could have saved mid-air, in a cave, etc.)
-            const spawnX = pData.x || 0;
-            const spawnZ = pData.z || 0;
-
-            // Find safe spawn Y: start at 100, or find the surface above saved X/Z
-            let spawnY = 100;
-            // Generate the chunk they were in so we can find the surface
-            const chunkKey = `${Math.floor(spawnX / 16)},${Math.floor(spawnZ / 16)}`;
-            if (!world.chunkData.has(chunkKey)) {
-                world.chunkData.set(chunkKey, world.generateChunkData(Math.floor(spawnX / 16), Math.floor(spawnZ / 16)));
-            }
-            // Scan down from top to find surface
-            for (let testY = CHUNK_HEIGHT - 1; testY > 2; testY--) {
-                if (world.getBlock(Math.floor(spawnX), testY, Math.floor(spawnZ)) !== 0) {
-                    spawnY = testY + 2; // 2 blocks above surface
-                    break;
-                }
-            }
-            // Always clamp to at least Y=70 so player doesn't spawn underground
-            spawnY = Math.max(spawnY, 70);
+            // Exact X and Z, always Y=100 so player never spawns inside terrain
+            const spawnX = typeof pData.x === 'number' ? pData.x : 0;
+            const spawnZ = typeof pData.z === 'number' ? pData.z : 0;
+            const spawnY = 100;
 
             camera.position.set(spawnX, spawnY, spawnZ);
             camera.rotation.set(pData.rx || 0, pData.ry || 0, 0);
@@ -3627,16 +3627,15 @@ if (typeof SaveManager !== 'undefined') {
                 pData.chests.forEach(([k, v]) => world.chestData.set(k, v));
             }
 
-            // Show resume message on the blocker
             const resumeEl = document.getElementById('resume-status');
             if (resumeEl) {
-                resumeEl.innerText = `✅ World restored — ${spawnX.toFixed(0)}, ${spawnZ.toFixed(0)} | Click to continue`;
+                resumeEl.innerText = `✅ World restored — X:${spawnX.toFixed(0)} Z:${spawnZ.toFixed(0)} | Click to Play`;
             }
         } else {
-            // Brand new game
+            // Fresh new game
             camera.position.set(0, 100, 0);
             const resumeEl = document.getElementById('resume-status');
-            if (resumeEl) resumeEl.innerText = '🌍 New world generated — Click to Play';
+            if (resumeEl) resumeEl.innerText = '🌍 New world — Click to Play';
         }
 
         const loadEl = document.getElementById('loading');
@@ -3647,7 +3646,7 @@ if (typeof SaveManager !== 'undefined') {
     animate();
 }
 
-// Auto-save every 5 seconds (increased from 2s to reduce IndexedDB pressure)
-setInterval(() => { if (typeof saveGame === 'function') saveGame(); }, 5000);
-// Always save before tab close / refresh
+// Auto-save every 10 seconds in background
+setInterval(() => { if (typeof saveGame === 'function') saveGame(); }, 10000);
+// Hard save on tab close / reload
 window.addEventListener('beforeunload', () => { if (typeof saveGame === 'function') saveGame(); });
