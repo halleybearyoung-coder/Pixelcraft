@@ -1641,7 +1641,9 @@ function toggleInventory(forceState = null, withTable = false) {
         document.getElementById('crafting-title').innerText = withTable ? "Crafting Table" : "Crafting";
         updateRecipeList(); controls.unlock();
     } else {
-        screen.style.display = 'none'; controls.lock();
+        screen.style.display = 'none';
+        suppressUnlockBlocker = true;
+        controls.lock();
     }
 }
 
@@ -1651,7 +1653,9 @@ function openContainer(key) {
     document.getElementById('container-screen').style.display = 'flex';
     if (!world.chestData.has(key)) world.chestData.set(key, Array(CONTAINER_SIZE).fill().map(() => ({ type: 0, count: 0 })));
     currentContainer = { key: key, items: world.chestData.get(key) };
-    updateContainerUI(); controls.unlock();
+    updateContainerUI();
+    suppressUnlockBlocker = false;
+    controls.unlock();
 }
 
 function craftItem(recipe) {
@@ -1777,8 +1781,120 @@ class SimpleNoise {
         return 70.0 * (n0 + n1 + n2);
     }
 }
+// --- 3D NOISE for caves ---
+class SimpleNoise3D {
+    constructor() {
+        this.perm = new Uint8Array(512);
+        for (let i = 0; i < 512; i++) this.perm[i] = Math.floor(Math.random() * 256);
+        this.grad3 = [[1,1,0],[-1,1,0],[1,-1,0],[-1,-1,0],[1,0,1],[-1,0,1],[1,0,-1],[-1,0,-1],[0,1,1],[0,-1,1],[0,1,-1],[0,-1,-1]];
+    }
+    dot3(g, x, y, z) { return g[0]*x + g[1]*y + g[2]*z; }
+    noise3D(xin, yin, zin) {
+        const F3 = 1/3, G3 = 1/6;
+        let s = (xin+yin+zin)*F3;
+        let i = Math.floor(xin+s), j = Math.floor(yin+s), k = Math.floor(zin+s);
+        let t = (i+j+k)*G3;
+        let x0=xin-(i-t), y0=yin-(j-t), z0=zin-(k-t);
+        let i1,j1,k1,i2,j2,k2;
+        if(x0>=y0){if(y0>=z0){i1=1;j1=0;k1=0;i2=1;j2=1;k2=0}else if(x0>=z0){i1=1;j1=0;k1=0;i2=1;j2=0;k2=1}else{i1=0;j1=0;k1=1;i2=1;j2=0;k2=1}}
+        else{if(y0<z0){i1=0;j1=0;k1=1;i2=0;j2=1;k2=1}else if(x0<z0){i1=0;j1=1;k1=0;i2=0;j2=1;k2=1}else{i1=0;j1=1;k1=0;i2=1;j2=1;k2=0}}
+        let x1=x0-i1+G3,y1=y0-j1+G3,z1=z0-k1+G3;
+        let x2=x0-i2+2*G3,y2=y0-j2+2*G3,z2=z0-k2+2*G3;
+        let x3=x0-1+3*G3,y3=y0-1+3*G3,z3=z0-1+3*G3;
+        let ii=i&255,jj=j&255,kk=k&255;
+        let gi0=this.perm[ii+this.perm[jj+this.perm[kk]]]%12;
+        let gi1=this.perm[ii+i1+this.perm[jj+j1+this.perm[kk+k1]]]%12;
+        let gi2=this.perm[ii+i2+this.perm[jj+j2+this.perm[kk+k2]]]%12;
+        let gi3=this.perm[ii+1+this.perm[jj+1+this.perm[kk+1]]]%12;
+        let n0,n1,n2,n3;
+        let t0=0.6-x0*x0-y0*y0-z0*z0; if(t0<0)n0=0;else{t0*=t0;n0=t0*t0*this.dot3(this.grad3[gi0],x0,y0,z0);}
+        let t1=0.6-x1*x1-y1*y1-z1*z1; if(t1<0)n1=0;else{t1*=t1;n1=t1*t1*this.dot3(this.grad3[gi1],x1,y1,z1);}
+        let t2=0.6-x2*x2-y2*y2-z2*z2; if(t2<0)n2=0;else{t2*=t2;n2=t2*t2*this.dot3(this.grad3[gi2],x2,y2,z2);}
+        let t3=0.6-x3*x3-y3*y3-z3*z3; if(t3<0)n3=0;else{t3*=t3;n3=t3*t3*this.dot3(this.grad3[gi3],x3,y3,z3);}
+        return 32*(n0+n1+n2+n3);
+    }
+}
+
 const noise = new SimpleNoise();
 const biomeNoise = new SimpleNoise();
+const caveNoise = new SimpleNoise3D();
+const caveNoise2 = new SimpleNoise3D();
+
+// --- UNDERGROUND LOOT TABLES ---
+function generateMineshaftLoot() {
+    const items = Array(CONTAINER_SIZE).fill().map(() => ({ type: 0, count: 0 }));
+    const loot = [
+        { type: BLOCKS.IRON_ORE.id, weight: 8, count: [2, 6] },
+        { type: BLOCKS.GOLD_ORE.id, weight: 4, count: [1, 3] },
+        { type: BLOCKS.COAL_ORE.id, weight: 10, count: [3, 8] },
+        { type: BLOCKS.IRON_INGOT.id, weight: 5, count: [1, 4] },
+        { type: BLOCKS.STICK.id, weight: 6, count: [4, 10] },
+        { type: BLOCKS.WOOD_PICK.id, weight: 3, count: [1, 1] },
+        { type: BLOCKS.PLANKS.id, weight: 6, count: [4, 12] },
+        { type: BLOCKS.COBWEB.id, weight: 4, count: [1, 3] },
+    ];
+    for (let i = 0; i < 5 + Math.floor(Math.random() * 4); i++) {
+        const totalW = loot.reduce((s, l) => s + l.weight, 0);
+        let r = Math.random() * totalW, picked = loot[0];
+        for (const l of loot) { r -= l.weight; if (r <= 0) { picked = l; break; } }
+        const slot = Math.floor(Math.random() * CONTAINER_SIZE);
+        if (items[slot].type === 0) {
+            items[slot].type = picked.type;
+            items[slot].count = picked.count[0] + Math.floor(Math.random() * (picked.count[1] - picked.count[0]));
+        }
+    }
+    return items;
+}
+
+function generateDungeonLoot() {
+    const items = Array(CONTAINER_SIZE).fill().map(() => ({ type: 0, count: 0 }));
+    const loot = [
+        { type: BLOCKS.DIAMOND.id, weight: 2, count: [1, 2] },
+        { type: BLOCKS.GOLD_INGOT.id, weight: 5, count: [1, 4] },
+        { type: BLOCKS.IRON_INGOT.id, weight: 6, count: [2, 6] },
+        { type: BLOCKS.IRON_SWORD.id, weight: 3, count: [1, 1] },
+        { type: BLOCKS.STONE_SWORD.id, weight: 4, count: [1, 1] },
+        { type: BLOCKS.DIAMOND_ORE.id, weight: 2, count: [1, 2] },
+        { type: BLOCKS.GOLEM_EYE.id, weight: 2, count: [1, 1] },
+        { type: BLOCKS.BRICKS.id, weight: 5, count: [4, 12] },
+        { type: BLOCKS.TNT.id, weight: 3, count: [1, 2] },
+    ];
+    for (let i = 0; i < 6 + Math.floor(Math.random() * 4); i++) {
+        const totalW = loot.reduce((s, l) => s + l.weight, 0);
+        let r = Math.random() * totalW, picked = loot[0];
+        for (const l of loot) { r -= l.weight; if (r <= 0) { picked = l; break; } }
+        const slot = Math.floor(Math.random() * CONTAINER_SIZE);
+        if (items[slot].type === 0) {
+            items[slot].type = picked.type;
+            items[slot].count = picked.count[0] + Math.floor(Math.random() * (picked.count[1] - picked.count[0] + 1));
+        }
+    }
+    return items;
+}
+
+function generateBuriedTreasureLoot() {
+    const items = Array(CONTAINER_SIZE).fill().map(() => ({ type: 0, count: 0 }));
+    const loot = [
+        { type: BLOCKS.DIAMOND.id, weight: 5, count: [2, 5] },
+        { type: BLOCKS.GOLD_INGOT.id, weight: 8, count: [3, 8] },
+        { type: BLOCKS.IRON_INGOT.id, weight: 6, count: [4, 10] },
+        { type: BLOCKS.DIAMOND_SWORD.id, weight: 2, count: [1, 1] },
+        { type: BLOCKS.GOLD_SWORD.id, weight: 4, count: [1, 1] },
+        { type: BLOCKS.GOLEM_EYE.id, weight: 5, count: [1, 3] },
+        { type: BLOCKS.DIAMOND_ORE.id, weight: 3, count: [1, 3] },
+    ];
+    for (let i = 0; i < 7 + Math.floor(Math.random() * 5); i++) {
+        const totalW = loot.reduce((s, l) => s + l.weight, 0);
+        let r = Math.random() * totalW, picked = loot[0];
+        for (const l of loot) { r -= l.weight; if (r <= 0) { picked = l; break; } }
+        const slot = Math.floor(Math.random() * CONTAINER_SIZE);
+        if (items[slot].type === 0) {
+            items[slot].type = picked.type;
+            items[slot].count = picked.count[0] + Math.floor(Math.random() * (picked.count[1] - picked.count[0] + 1));
+        }
+    }
+    return items;
+}
 
 class VoxelWorld {
     constructor(scene) {
@@ -1939,6 +2055,9 @@ class VoxelWorld {
         else if (biomeCheck < -0.5) centerBiome = 'SNOW';
         else if (humidCheck > 0.3 && biomeCheck > -0.2 && biomeCheck < 0.3) centerBiome = 'JUNGLE';
 
+        // Precompute surface heights for cave/ravine clamping
+        const surfaceHeight = new Int32Array(this.cellSize * this.cellSize);
+
         for (let x = 0; x < this.cellSize; x++) {
             for (let z = 0; z < this.cellSize; z++) {
                 const gx = cx * this.cellSize + x; const gz = cz * this.cellSize + z;
@@ -1959,6 +2078,7 @@ class VoxelWorld {
                 if (totalSpecial > 1) { wDesert /= totalSpecial; wSnow /= totalSpecial; wJungle /= totalSpecial; totalSpecial = 1; }
                 const wPlains = 1 - totalSpecial;
                 const height = Math.floor((hDesert * wDesert) + (hSnow * wSnow) + (hJungle * wJungle) + (hPlains * wPlains));
+                surfaceHeight[x + this.cellSize * z] = height;
                 let surfaceBlock = BLOCKS.GRASS.id; let subSurface = BLOCKS.DIRT.id;
                 if (wDesert > 0.5) { surfaceBlock = BLOCKS.SAND.id; subSurface = BLOCKS.SAND.id; }
                 else if (wSnow > 0.5) { surfaceBlock = BLOCKS.SNOW.id; }
@@ -1979,6 +2099,198 @@ class VoxelWorld {
                     else if (y < height) type = subSurface;
                     else if (y === height) type = surfaceBlock;
                     data[x + this.cellSize * (y + CHUNK_HEIGHT * z)] = type;
+                }
+            }
+        }
+
+        // === CAVE CARVING (3D Perlin worm caves) ===
+        for (let x = 0; x < this.cellSize; x++) {
+            for (let z = 0; z < this.cellSize; z++) {
+                const surf = surfaceHeight[x + this.cellSize * z];
+                for (let y = 2; y < surf - 4; y++) {
+                    const gx = cx * this.cellSize + x;
+                    const gz = cz * this.cellSize + z;
+                    // Two offset noise samples — where both are high, carve a cave
+                    const cn1 = caveNoise.noise3D(gx * 0.04, y * 0.04, gz * 0.04);
+                    const cn2 = caveNoise2.noise3D(gx * 0.04, y * 0.04, gz * 0.04);
+                    // Tunnel carve: abs(n) < threshold
+                    const thresh = y < 20 ? 0.10 : 0.13;
+                    if (Math.abs(cn1) < thresh && Math.abs(cn2) < thresh) {
+                        const idx = x + this.cellSize * (y + CHUNK_HEIGHT * z);
+                        if (data[idx] !== BLOCKS.BEDROCK.id) data[idx] = 0;
+                        // Expose floor so lava pools can form below y=12
+                        if (y <= 12) {
+                            const below = x + this.cellSize * ((y - 1) + CHUNK_HEIGHT * z);
+                            if (data[below] !== BLOCKS.BEDROCK.id) data[below] = 0;
+                        }
+                    }
+                }
+            }
+        }
+
+        // === RAVINES ===
+        // Use chunk-seeded random — ~15% chance per chunk
+        const ravSeed = Math.abs(Math.sin(cx * 73.1 + cz * 127.9) * 9999) % 1;
+        if (ravSeed < 0.15) {
+            const ravX = 3 + Math.floor((Math.abs(Math.sin(cx * 31.4)) * 9999) % 9);
+            const ravZ = 3 + Math.floor((Math.abs(Math.cos(cz * 17.2)) * 9999) % 9);
+            const ravWidth = 2 + Math.floor(ravSeed * 20);  // 2–5 blocks wide
+            const ravDepth = 20 + Math.floor(ravSeed * 30); // 20–50 blocks deep
+            const ravAngle = ravSeed * Math.PI;
+            const ravLen = 8 + Math.floor(ravSeed * 8);
+
+            for (let step = 0; step < ravLen; step++) {
+                const rx = Math.round(ravX + Math.cos(ravAngle) * step * 2);
+                const rz = Math.round(ravZ + Math.sin(ravAngle) * step * 2);
+                for (let dx = -ravWidth; dx <= ravWidth; dx++) {
+                    for (let dz = -ravWidth; dz <= ravWidth; dz++) {
+                        if (dx * dx + dz * dz > ravWidth * ravWidth) continue;
+                        const bx = rx + dx; const bz = rz + dz;
+                        if (bx < 0 || bx >= 16 || bz < 0 || bz >= 16) continue;
+                        const surf = surfaceHeight[bx + this.cellSize * bz];
+                        const floorY = Math.max(2, surf - ravDepth);
+                        for (let y = floorY; y < surf - 1; y++) {
+                            const widen = Math.cos(((y - floorY) / (surf - floorY - 1)) * Math.PI * 0.5);
+                            if (dx * dx + dz * dz <= (ravWidth * widen) * (ravWidth * widen)) {
+                                const idx = bx + this.cellSize * (y + CHUNK_HEIGHT * bz);
+                                if (data[idx] !== BLOCKS.BEDROCK.id) data[idx] = 0;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // === MINESHAFTS ===
+        const mineSeed = Math.abs(Math.sin(cx * 53.7 + cz * 91.3) * 9999) % 1;
+        if (mineSeed < 0.20) {
+            const mineY = 20 + Math.floor(mineSeed * 25); // Y 20–45
+            const startX = Math.floor(mineSeed * 8) + 2;
+            const startZ = Math.floor(mineSeed * 8) + 2;
+            const tunnelLen = 6 + Math.floor(mineSeed * 8);
+            const dirX = mineSeed > 0.1 ? 1 : 0;
+            const dirZ = mineSeed <= 0.1 ? 1 : 0;
+
+            const carve = (lx, ly, lz, w, h) => {
+                for (let dx = -w; dx <= w; dx++) for (let dy = 0; dy < h; dy++) for (let dz = -w; dz <= w; dz++) {
+                    const bx = lx + dx, bz = lz + dz, by = ly + dy;
+                    if (bx < 0 || bx >= 16 || bz < 0 || bz >= 16 || by < 2 || by >= CHUNK_HEIGHT) continue;
+                    const idx = bx + this.cellSize * (by + CHUNK_HEIGHT * bz);
+                    if (data[idx] !== BLOCKS.BEDROCK.id) data[idx] = 0;
+                }
+            };
+            const placeSupport = (lx, ly, lz) => {
+                // Oak log pillars + planks ceiling supports every 4 blocks
+                for (let dy = 0; dy < 3; dy++) {
+                    const set = (x2, y2, z2, id) => {
+                        if (x2 < 0 || x2 >= 16 || z2 < 0 || z2 >= 16 || y2 < 1 || y2 >= CHUNK_HEIGHT) return;
+                        data[x2 + this.cellSize * (y2 + CHUNK_HEIGHT * z2)] = id;
+                    };
+                    set(lx - 1, ly + dy, lz, BLOCKS.LOG.id);
+                    set(lx + 1, ly + dy, lz, BLOCKS.LOG.id);
+                    set(lx - 1, ly + 2, lz, BLOCKS.PLANKS.id);
+                    set(lx, ly + 2, lz, BLOCKS.PLANKS.id);
+                    set(lx + 1, ly + 2, lz, BLOCKS.PLANKS.id);
+                }
+            };
+
+            // Main corridor
+            for (let i = 0; i < tunnelLen; i++) {
+                const lx = startX + dirX * i * 2;
+                const lz = startZ + dirZ * i * 2;
+                carve(lx, mineY, lz, 1, 3);
+                if (i % 4 === 0) placeSupport(lx, mineY, lz);
+
+                // Place torch/cobweb decoration
+                if (i % 5 === 2 && lx >= 0 && lx < 16 && lz >= 0 && lz < 16) {
+                    data[lx + this.cellSize * ((mineY - 1) + CHUNK_HEIGHT * lz)] = BLOCKS.COBWEB.id;
+                }
+            }
+
+            // Cross-corridor branch
+            const branchX = startX + Math.floor(tunnelLen / 2) * dirX * 2;
+            const branchZ = startZ + Math.floor(tunnelLen / 2) * dirZ * 2;
+            for (let i = -4; i <= 4; i++) {
+                const lx = branchX + (dirZ) * i * 2;
+                const lz = branchZ + (dirX) * i * 2;
+                carve(lx, mineY, lz, 1, 3);
+            }
+
+            // Chest at end of mineshaft
+            const chestX = Math.min(15, Math.max(0, startX + dirX * (tunnelLen - 1) * 2));
+            const chestZ = Math.min(15, Math.max(0, startZ + dirZ * (tunnelLen - 1) * 2));
+            if (chestX >= 0 && chestX < 16 && chestZ >= 0 && chestZ < 16) {
+                data[chestX + this.cellSize * (mineY + CHUNK_HEIGHT * chestZ)] = BLOCKS.CHEST.id;
+                const gChestX = cx * 16 + chestX, gChestZ = cz * 16 + chestZ;
+                this.chestData.set(`${gChestX},${mineY},${gChestZ}`, generateMineshaftLoot());
+            }
+        }
+
+        // === UNDERGROUND DUNGEON (stone brick room with mob spawner chest) ===
+        const dungSeed = Math.abs(Math.sin(cx * 113.0 + cz * 67.5) * 9999) % 1;
+        if (dungSeed < 0.10) {
+            const dungY = 12 + Math.floor(dungSeed * 20);
+            const dungX = 4 + Math.floor(dungSeed * 7);
+            const dungZ = 4 + Math.floor(dungSeed * 7);
+            const dungR = 4;
+            for (let dx = -dungR; dx <= dungR; dx++) {
+                for (let dz = -dungR; dz <= dungR; dz++) {
+                    for (let dy = 0; dy <= 4; dy++) {
+                        const bx = dungX + dx, bz = dungZ + dz, by = dungY + dy;
+                        if (bx < 0 || bx >= 16 || bz < 0 || bz >= 16 || by < 1 || by >= CHUNK_HEIGHT) continue;
+                        const idx = bx + this.cellSize * (by + CHUNK_HEIGHT * bz);
+                        const isWall = Math.abs(dx) === dungR || Math.abs(dz) === dungR || dy === 0 || dy === 4;
+                        const isMossyCorner = (Math.abs(dx) === dungR && Math.abs(dz) === dungR);
+                        if (isWall) {
+                            data[idx] = isMossyCorner ? BLOCKS.COBBLESTONE.id : BLOCKS.BRICKS.id;
+                        } else {
+                            data[idx] = 0; // hollow inside
+                        }
+                    }
+                }
+            }
+            // Door opening
+            const doorX = dungX; const doorZ = dungZ - dungR;
+            for (let dy = 1; dy <= 2; dy++) {
+                if (doorZ >= 0 && doorZ < 16 && doorX >= 0 && doorX < 16) {
+                    data[doorX + this.cellSize * ((dungY + dy) + CHUNK_HEIGHT * doorZ)] = 0;
+                }
+            }
+            // 2 treasure chests
+            const placeChest = (lx, ly, lz) => {
+                if (lx < 0 || lx >= 16 || lz < 0 || lz >= 16) return;
+                data[lx + this.cellSize * (ly + CHUNK_HEIGHT * lz)] = BLOCKS.CHEST.id;
+                const gx2 = cx * 16 + lx, gz2 = cz * 16 + lz;
+                this.chestData.set(`${gx2},${ly},${gz2}`, generateDungeonLoot());
+            };
+            placeChest(dungX - 2, dungY + 1, dungZ - 2);
+            placeChest(dungX + 2, dungY + 1, dungZ + 2);
+            // Cobweb dressing
+            for (let i = 0; i < 4; i++) {
+                const cwx = dungX + Math.floor(Math.random() * dungR * 2) - dungR + 1;
+                const cwz = dungZ + Math.floor(Math.random() * dungR * 2) - dungR + 1;
+                if (cwx >= 0 && cwx < 16 && cwz >= 0 && cwz < 16) {
+                    const cwidx = cwx + this.cellSize * ((dungY + 3) + CHUNK_HEIGHT * cwz);
+                    if (data[cwidx] === 0) data[cwidx] = BLOCKS.COBWEB.id;
+                }
+            }
+        }
+
+        // === BURIED TREASURE ===
+        const treasSeed = Math.abs(Math.sin(cx * 41.3 + cz * 159.7) * 9999) % 1;
+        if (treasSeed < 0.08) {
+            const tx = 5 + Math.floor(treasSeed * 6);
+            const tz = 5 + Math.floor(treasSeed * 6);
+            const surf = surfaceHeight[tx + this.cellSize * tz];
+            const ty = surf - 3 - Math.floor(treasSeed * 4); // 3–7 blocks underground
+            if (ty > 2 && ty < surf && tx >= 0 && tx < 16 && tz >= 0 && tz < 16) {
+                data[tx + this.cellSize * (ty + CHUNK_HEIGHT * tz)] = BLOCKS.CHEST.id;
+                const gx3 = cx * 16 + tx, gz3 = cz * 16 + tz;
+                this.chestData.set(`${gx3},${ty},${gz3}`, generateBuriedTreasureLoot());
+                // Mark with sandstone cap 1 block above so player can find it
+                if (data[tx + this.cellSize * ((ty + 1) + CHUNK_HEIGHT * tz)] === 0 ||
+                    data[tx + this.cellSize * ((ty + 1) + CHUNK_HEIGHT * tz)] === BLOCKS.DIRT.id) {
+                    data[tx + this.cellSize * ((ty + 1) + CHUNK_HEIGHT * tz)] = BLOCKS.SANDSTONE.id;
                 }
             }
         }
@@ -2331,7 +2643,9 @@ controls.addEventListener('lock', () => {
     document.getElementById('chat-modal').style.display = 'none';
 });
 
+let suppressUnlockBlocker = false;
 controls.addEventListener('unlock', () => {
+    if (suppressUnlockBlocker) { suppressUnlockBlocker = false; return; }
     if (!isInventoryOpen && !isChatOpen && !isContainerOpen) blocker.style.display = 'flex';
 });
 
@@ -2464,8 +2778,44 @@ let lastSpaceTime = 0;
 document.addEventListener('keydown', (e) => {
     keyState[e.code] = true;
 
-    // E = inventory
-    if (e.code === 'KeyE' && controls.isLocked) toggleInventory(null, false);
+    // E = inventory / close any open screen
+    if (e.code === 'KeyE') {
+        if (isContainerOpen) {
+            isContainerOpen = false;
+            document.getElementById('container-screen').style.display = 'none';
+            suppressUnlockBlocker = true;
+            controls.lock();
+            return;
+        }
+        const furnaceScreen = document.getElementById('furnace-screen');
+        if (furnaceScreen && furnaceScreen.style.display !== 'none') {
+            furnaceScreen.style.display = 'none';
+            isInventoryOpen = false;
+            suppressUnlockBlocker = true;
+            controls.lock();
+            return;
+        }
+        if (controls.isLocked || isInventoryOpen) toggleInventory(null, false);
+        return;
+    }
+
+    // Escape = close any open UI
+    if (e.code === 'Escape') {
+        if (isInventoryOpen) { toggleInventory(false); return; }
+        if (isContainerOpen) {
+            isContainerOpen = false;
+            document.getElementById('container-screen').style.display = 'none';
+            suppressUnlockBlocker = true;
+            controls.lock(); return;
+        }
+        const furnaceScreen = document.getElementById('furnace-screen');
+        if (furnaceScreen && furnaceScreen.style.display !== 'none') {
+            furnaceScreen.style.display = 'none';
+            isInventoryOpen = false;
+            suppressUnlockBlocker = true;
+            controls.lock(); return;
+        }
+    }
 
     // T = open command console
     if (e.code === 'KeyT' && controls.isLocked) {
@@ -2824,7 +3174,8 @@ function runCommand(raw, output, input) {
             cmdLog(output, '/fly               Toggle flying');
             cmdLog(output, '/give [id] [amt]   Give item (use block ID or name)');
             cmdLog(output, '/give all          Give all items');
-            cmdLog(output, '/summon [mob]      Spawn mob at your location');
+            cmdLog(output, '/find [cave/dungeon/treasure]  Locate nearby underground feature');
+            cmdLog(output, '/summon [mob name]  Supports multi-word: ghost, revenant, snow defender, etc');
             cmdLog(output, '/kill [mob/all]    Kill nearby mobs (or all)');
             cmdLog(output, '/place [id] [x y z] Place a block at coords');
             cmdLog(output, '/tp [x] [y] [z]   Teleport to coords');
@@ -2876,10 +3227,52 @@ function runCommand(raw, output, input) {
             break;
         }
 
+        case 'find': {
+            const findArg = (args[0] || '').toLowerCase();
+            const px = Math.floor(camera.position.x), pz = Math.floor(camera.position.z);
+            let found = false;
+            // Scan nearby chunks for features
+            for (let r = 0; r <= 8 && !found; r++) {
+                for (let dcx = -r; dcx <= r && !found; dcx++) {
+                    for (let dcz = -r; dcz <= r && !found; dcz++) {
+                        if (Math.abs(dcx) !== r && Math.abs(dcz) !== r) continue;
+                        const cx2 = Math.floor(px / 16) + dcx;
+                        const cz2 = Math.floor(pz / 16) + dcz;
+                        const mineSeed = Math.abs(Math.sin(cx2 * 53.7 + cz2 * 91.3) * 9999) % 1;
+                        const dungSeed = Math.abs(Math.sin(cx2 * 113.0 + cz2 * 67.5) * 9999) % 1;
+                        const treasSeed = Math.abs(Math.sin(cx2 * 41.3 + cz2 * 159.7) * 9999) % 1;
+                        if ((findArg === 'mine' || findArg === 'mineshaft' || findArg === '') && mineSeed < 0.20) {
+                            const wx = cx2 * 16 + 8, wz = cz2 * 16 + 8;
+                            cmdLog(output, `⛏ Mineshaft near ${wx}, ?, ${wz}  (${Math.round(Math.hypot(wx-px, wz-pz))} blocks away)`, '#ffd700');
+                            found = true;
+                        } else if ((findArg === 'dungeon' || findArg === '') && dungSeed < 0.10) {
+                            const wx = cx2 * 16 + 8, wz = cz2 * 16 + 8;
+                            cmdLog(output, `🏛 Dungeon near ${wx}, ?, ${wz}  (${Math.round(Math.hypot(wx-px, wz-pz))} blocks away)`, '#ff9944');
+                            found = true;
+                        } else if ((findArg === 'treasure' || findArg === '') && treasSeed < 0.08) {
+                            const wx = cx2 * 16 + 8, wz = cz2 * 16 + 8;
+                            cmdLog(output, `💎 Buried Treasure near ${wx}, ?, ${wz}  (${Math.round(Math.hypot(wx-px, wz-pz))} blocks away)`, '#00eeff');
+                            found = true;
+                        }
+                    }
+                }
+            }
+            if (!found) cmdLog(output, `Nothing found nearby. Try exploring further!`, '#aaa');
+            break;
+        }
+
         case 'summon': {
-            const mobArg = (args[0] || 'pig').toLowerCase();
+            // Join all args so "/summon poison revenant" or "/summon snow defender" works
+            const rawMobArg = args.join(' ').toLowerCase().trim() || 'pig';
+            // Normalize: replace spaces/underscores, map aliases
+            const aliasMap = {
+                'poison revenant': 'revenant', 'poison_revenant': 'revenant',
+                'snow defender': 'snow_defender', 'sand defender': 'sand_defender',
+                'snow golem': 'snow_defender', 'sand golem': 'sand_defender',
+            };
+            const normalizedArg = aliasMap[rawMobArg] || rawMobArg.replace(/\s+/g, '_');
             const validMobs = ['pig', 'zombie', 'skeleton', 'husk', 'snow_defender', 'sand_defender', 'ghost', 'revenant', 'human'];
-            const mobName = validMobs.find(m => m.startsWith(mobArg)) || mobArg;
+            const mobName = validMobs.find(m => m === normalizedArg || m.startsWith(normalizedArg)) || normalizedArg;
             const sx = camera.position.x + (Math.random() - 0.5) * 4;
             const sz = camera.position.z + (Math.random() - 0.5) * 4;
             const sy = camera.position.y + 1;
