@@ -513,7 +513,120 @@ function createTextureAtlas() {
     };
     drawIngot(1, 12, '#ccc'); drawIngot(2, 12, '#fce14b'); drawIngot(3, 12, '#5decf5');
 
-    const tex = new THREE.CanvasTexture(canvas);
+    // ═══ NULL DIMENSION TEXTURES ═══
+    // (0,13) NULL_STONE — jet black with electric blue micro-cracks
+    fill(0, 13, '#080810');
+    { const nx = 0*B, ny = 13*B;
+      ctx.strokeStyle = '#1a4aff'; ctx.lineWidth = 1;
+      for (let i = 0; i < 8; i++) {
+        ctx.beginPath(); ctx.moveTo(nx + Math.random()*B, ny + Math.random()*B);
+        ctx.lineTo(nx + Math.random()*B, ny + Math.random()*B); ctx.stroke();
+      }
+      ctx.strokeStyle = '#0a1a66'; ctx.lineWidth = 2;
+      for (let i = 0; i < 5; i++) {
+        ctx.beginPath(); ctx.moveTo(nx + Math.random()*B, ny + Math.random()*B);
+        ctx.lineTo(nx + Math.random()*B, ny + Math.random()*B); ctx.stroke();
+      }
+    }
+
+    // (1,13) NULL_SOIL — deep void earth, dark purple-black
+    fill(1, 13, '#0d0818');
+    { const nx = 1*B, ny = 13*B;
+      for (let i = 0; i < 30; i++) drawBlob(nx + Math.random()*B, ny + Math.random()*B, 3 + Math.random()*3, '#1a0d2e');
+      for (let i = 0; i < 10; i++) drawBlob(nx + Math.random()*B, ny + Math.random()*B, 2, '#2a0a4a');
+    }
+
+    // (2,13) NULL_WATER — glowing electric blue
+    fill(2, 13, 'rgba(0, 60, 255, 0.75)');
+    { const wx = 2*B, wy = 13*B;
+      ctx.fillStyle = 'rgba(80, 160, 255, 0.5)';
+      for (let y = 4; y < B; y += 6) {
+        ctx.beginPath(); ctx.moveTo(wx, wy + y);
+        for (let x = 0; x <= B; x += 4) ctx.lineTo(wx + x, wy + y + Math.sin(x/4 + y)*2.5);
+        ctx.stroke();
+      }
+      // glow dots
+      ctx.fillStyle = 'rgba(180, 220, 255, 0.6)';
+      for (let i = 0; i < 8; i++) drawBlob(wx + Math.random()*B, wy + Math.random()*B, 2, 'rgba(180,220,255,0.7)');
+    }
+
+    // (3,13) NULL_ORE — black stone with void crystal veins
+    fill(3, 13, '#090912');
+    { const ox = 3*B, oy = 13*B;
+      ctx.fillStyle = '#0d0d1a';
+      for (let i = 0; i < 8; i++) drawBlob(ox + Math.random()*B, oy + Math.random()*B, 5, '#111122');
+      // bright cyan-white crystal shards
+      ctx.fillStyle = '#aaeeff';
+      for (let i = 0; i < 6; i++) {
+        const sx = ox + 8 + Math.random()*(B-16), sy = oy + 8 + Math.random()*(B-16);
+        ctx.beginPath(); ctx.moveTo(sx, sy-6); ctx.lineTo(sx+4, sy); ctx.lineTo(sx, sy+6); ctx.lineTo(sx-4, sy); ctx.fill();
+      }
+      ctx.fillStyle = '#55ddff';
+      for (let i = 0; i < 4; i++) drawBlob(ox + 8 + Math.random()*(B-16), oy + 8 + Math.random()*(B-16), 3, '#55ddff');
+    }
+
+    // (0,14) NULL_CRYSTAL — tall translucent deep-blue spire
+    fill(0, 14, 'rgba(10,10,40,0.9)');
+    { const cx2 = 0*B, cy2 = 14*B;
+      ctx.fillStyle = 'rgba(20, 60, 200, 0.8)';
+      // 3 crystal pillars
+      const drawCrystal = (x, y, w, h) => {
+        ctx.beginPath(); ctx.moveTo(x + w/2, y); ctx.lineTo(x + w, y + h); ctx.lineTo(x, y + h); ctx.fill();
+        ctx.fillStyle = 'rgba(100,180,255,0.5)'; ctx.fillRect(x + w/4, y + h*0.3, w/2, 4); ctx.fillStyle = 'rgba(20,60,200,0.8)';
+      };
+      drawCrystal(cx2 + 8, cy2 + 4, 16, 50); drawCrystal(cx2 + 30, cy2 + 16, 12, 40); drawCrystal(cx2 + 48, cy2 + 8, 14, 46);
+    }
+
+    // (1,14) NULL_BRICK — dark void bricks with blue mortar lines
+    fill(1, 14, '#111120');
+    { const bkx = 1*B, bky = 14*B;
+      ctx.fillStyle = '#0a0a18';
+      for (let y = 0; y < B; y += 16) {
+        const offset = (Math.floor(y/16) % 2) * 16;
+        for (let x = 0; x < B; x += 32) {
+          ctx.fillRect(bkx + x + offset + 2, bky + y + 2, 28, 12);
+        }
+      }
+      ctx.strokeStyle = '#1a1aff'; ctx.lineWidth = 1;
+      for (let y = 0; y < B; y += 16) { ctx.beginPath(); ctx.moveTo(bkx, bky+y); ctx.lineTo(bkx+B, bky+y); ctx.stroke(); }
+      for (let x = 0; x < B; x += 32) { ctx.beginPath(); ctx.moveTo(bkx+x, bky); ctx.lineTo(bkx+x, bky+B); ctx.stroke(); }
+    }
+
+    // (2,14) NULL_PORTAL — swirling void (animated appearance)
+    fill(2, 14, '#000008');
+    { const px2 = 2*B, py2 = 14*B;
+      // concentric void rings with blue glow
+      for (let r = 28; r > 4; r -= 5) {
+        const alpha = (28 - r) / 28;
+        ctx.strokeStyle = `rgba(${Math.floor(20 + alpha*100)}, ${Math.floor(alpha*80)}, 255, ${0.3 + alpha * 0.7})`;
+        ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.arc(px2 + 32, py2 + 32, r, 0, Math.PI * 2); ctx.stroke();
+      }
+      // spiral arms
+      ctx.strokeStyle = 'rgba(80, 160, 255, 0.8)'; ctx.lineWidth = 2;
+      for (let a = 0; a < Math.PI * 4; a += 0.15) {
+        const r = a * 4; const x = px2 + 32 + Math.cos(a) * r; const y = py2 + 32 + Math.sin(a) * r;
+        ctx.beginPath(); ctx.arc(x, y, 1, 0, Math.PI*2); ctx.fillStyle = 'rgba(120,200,255,0.9)'; ctx.fill();
+      }
+      // bright core
+      ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(px2+32, py2+32, 5, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = 'rgba(100,180,255,0.9)'; ctx.beginPath(); ctx.arc(px2+32, py2+32, 10, 0, Math.PI*2); ctx.fill();
+    }
+
+    // (3,14) NULL_INGOT — dark metal with blue sheen
+    drawIngot(3, 14, '#1a1a3a');
+    { const ix2 = 3*B, iy2 = 14*B;
+      ctx.fillStyle = 'rgba(80,120,255,0.5)'; ctx.fillRect(ix2+20, iy2+24, 24, 3);
+    }
+
+    // (0,15) VOID_SHARD — jagged cyan-blue gem item
+    fill(0, 15, 'rgba(0,0,0,0)');
+    { const vx = 0*B, vy = 15*B;
+      ctx.fillStyle = '#33aaff';
+      ctx.beginPath(); ctx.moveTo(vx+32, vy+8); ctx.lineTo(vx+50, vy+28); ctx.lineTo(vx+40, vy+52); ctx.lineTo(vx+24, vy+52); ctx.lineTo(vx+14, vy+28); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = 'rgba(180,240,255,0.8)'; ctx.fillRect(vx+26, vy+14, 6, 20);
+      ctx.strokeStyle = '#0055cc'; ctx.lineWidth = 2; ctx.stroke();
+    }
     tex.magFilter = THREE.NearestFilter;
     tex.minFilter = THREE.NearestFilter;
     tex.generateMipmaps = false;
@@ -843,6 +956,17 @@ const BLOCKS = {
     GOLD_INGOT: { id: 42, isItem: true },
     DIAMOND: { id: 43, isItem: true },
     REVENANT_SHARD: { id: 44, isItem: true },
+
+    // ═══ NULL DIMENSION BLOCKS ═══
+    NULL_STONE:   { id: 50, hardness: 3.5, toolClass: 'pickaxe' },   // main null terrain
+    NULL_SOIL:    { id: 51, hardness: 1.0, toolClass: 'shovel' },    // surface layer
+    NULL_WATER:   { id: 52, hardness: 0, isFluid: true },            // electric blue lakes
+    NULL_ORE:     { id: 53, hardness: 4.5, toolClass: 'pickaxe', drop: 58 }, // drops void shard
+    NULL_CRYSTAL: { id: 54, hardness: 2.5, toolClass: 'pickaxe' },  // crystal formations
+    NULL_BRICK:   { id: 55, hardness: 3.0, toolClass: 'pickaxe' },  // null ruins
+    NULL_PORTAL:  { id: 56, hardness: 9999999 },                     // unbreakable portal frame
+    NULL_INGOT:   { id: 57, isItem: true },                          // smelted from null ore
+    VOID_SHARD:   { id: 58, isItem: true },                          // raw null ore drop
 };
 
 const getBlockProps = (id) => Object.values(BLOCKS).find(b => b.id === id) || { hardness: 0 };
@@ -885,6 +1009,14 @@ const getBlockUVs = (id, faceDir) => {
     if (id === 31) return mapQuad(0, 9);
     if (id === 32) return (faceDir === 'top' || faceDir === 'bottom') ? mapQuad(2, 9) : mapQuad(1, 9);
     if (id === 33) return mapQuad(3, 9);
+    // ═══ NULL DIMENSION ═══
+    if (id === 50) return mapQuad(0, 13); // NULL_STONE
+    if (id === 51) return mapQuad(1, 13); // NULL_SOIL
+    if (id === 52) return mapQuad(2, 13); // NULL_WATER
+    if (id === 53) return mapQuad(3, 13); // NULL_ORE
+    if (id === 54) return mapQuad(0, 14); // NULL_CRYSTAL
+    if (id === 55) return mapQuad(1, 14); // NULL_BRICK
+    if (id === 56) return mapQuad(2, 14); // NULL_PORTAL
     return mapQuad(0, 0);
 };
 
@@ -906,6 +1038,12 @@ const getBlockIconPos = (id) => {
     if (id === 38) return [3, 11]; if (id === 39) return [0, 12];
     if (id === 40) return [2, 10]; if (id === 41) return [1, 12]; if (id === 42) return [2, 12]; if (id === 43) return [3, 12];
     if (id === 44) return [2, 10]; // Revenant Shard reuses golem eye icon for now
+    // Null Dimension
+    if (id === 50) return [0, 13]; if (id === 51) return [1, 13];
+    if (id === 52) return [2, 13]; if (id === 53) return [3, 13];
+    if (id === 54) return [0, 14]; if (id === 55) return [1, 14];
+    if (id === 56) return [2, 14]; if (id === 57) return [3, 14];
+    if (id === 58) return [0, 15];
     return [0, 0];
 };
 
@@ -1529,6 +1667,7 @@ const INVENTORY_SIZE = 36;
 const CONTAINER_SIZE = 27;
 const inventory = Array(INVENTORY_SIZE).fill().map(() => ({ type: 0, count: 0 }));
 let currentContainer = null;
+let currentContainerKey = null;
 let selectedSlot = 0;
 let isInventoryOpen = false;
 let isCraftingTableOpen = false;
@@ -1553,6 +1692,10 @@ const RECIPES = [
     { name: "Iron Sword", input: { type: 41, count: 2 }, input2: { type: 20, count: 1 }, output: { type: 37, count: 1 }, requiresTable: true },
     { name: "Gold Sword", input: { type: 42, count: 2 }, input2: { type: 20, count: 1 }, output: { type: 38, count: 1 }, requiresTable: true },
     { name: "Diamond Sword", input: { type: 43, count: 2 }, input2: { type: 20, count: 1 }, output: { type: 39, count: 1 }, requiresTable: true },
+    // ═══ NULL DIMENSION RECIPES ═══
+    { name: "Null Bricks", input: { type: BLOCKS.NULL_STONE.id, count: 4 }, output: { type: BLOCKS.NULL_BRICK.id, count: 4 }, requiresTable: true },
+    { name: "Void Sword", input: { type: BLOCKS.NULL_INGOT.id, count: 2 }, input2: { type: 20, count: 1 }, output: { type: BLOCKS.NULL_INGOT.id, count: 1 }, requiresTable: true }, // placeholder
+    { name: "Null Stone (4)", input: { type: BLOCKS.NULL_SOIL.id, count: 2 }, output: { type: BLOCKS.NULL_STONE.id, count: 4 }, requiresTable: false },
 ];
 
 function initUI() {
@@ -1715,11 +1858,25 @@ function openContainer(key) {
     isContainerOpen = true; isInventoryOpen = false;
     document.getElementById('inventory-screen').style.display = 'none';
     document.getElementById('container-screen').style.display = 'flex';
-    if (!world.chestData.has(key)) world.chestData.set(key, Array(CONTAINER_SIZE).fill().map(() => ({ type: 0, count: 0 })));
-    currentContainer = { key: key, items: world.chestData.get(key) };
+    const aw = (typeof activeWorld === 'function') ? activeWorld() : world;
+    if (!aw.chestData.has(key)) aw.chestData.set(key, Array(CONTAINER_SIZE).fill().map(() => ({ type: 0, count: 0 })));
+    currentContainer = { key: key, items: aw.chestData.get(key) };
+    currentContainerKey = key; // remember key for portal check on close
     updateContainerUI();
     suppressUnlockBlocker = false;
     controls.unlock();
+}
+
+// Called whenever container is closed — checks if this chest is a portal offering
+function onContainerClose() {
+    if (currentContainerKey) {
+        const parts = currentContainerKey.split(',');
+        const cx2 = parseInt(parts[0]), cy2 = parseInt(parts[1]), cz2 = parseInt(parts[2]);
+        if (checkPortalOffering(cx2, cy2, cz2)) {
+            setTimeout(() => spawnNullPortal(cx2, cy2, cz2), 300);
+        }
+        currentContainerKey = null;
+    }
 }
 
 function craftItem(recipe) {
@@ -1951,6 +2108,31 @@ function generateBuriedTreasureLoot() {
         const totalW = loot.reduce((s, l) => s + l.weight, 0);
         let r = Math.random() * totalW, picked = loot[0];
         for (const l of loot) { r -= l.weight; if (r <= 0) { picked = l; break; } }
+        const slot = Math.floor(Math.random() * CONTAINER_SIZE);
+        if (items[slot].type === 0) {
+            items[slot].type = picked.type;
+            items[slot].count = picked.count[0] + Math.floor(Math.random() * (picked.count[1] - picked.count[0] + 1));
+        }
+    }
+    return items;
+}
+
+function generateNullRuinsLoot() {
+    const items = Array(CONTAINER_SIZE).fill().map(() => ({ type: 0, count: 0 }));
+    const loot = [
+        { type: BLOCKS.VOID_SHARD.id, weight: 10, count: [3, 8] },
+        { type: BLOCKS.NULL_INGOT.id, weight: 6, count: [1, 4] },
+        { type: BLOCKS.NULL_ORE.id, weight: 8, count: [2, 6] },
+        { type: BLOCKS.DIAMOND.id, weight: 3, count: [1, 3] },
+        { type: BLOCKS.DIAMOND_SWORD.id, weight: 2, count: [1, 1] },
+        { type: BLOCKS.GOLEM_EYE.id, weight: 4, count: [1, 2] },
+        { type: BLOCKS.REVENANT_SHARD.id, weight: 3, count: [1, 2] },
+        { type: BLOCKS.NULL_CRYSTAL.id, weight: 5, count: [2, 6] },
+    ];
+    for (let i = 0; i < 5 + Math.floor(Math.random() * 7); i++) {
+        const totalW = loot.reduce((s, l) => s + l.weight, 0);
+        let r2 = Math.random() * totalW, picked = loot[0];
+        for (const l of loot) { r2 -= l.weight; if (r2 <= 0) { picked = l; break; } }
         const slot = Math.floor(Math.random() * CONTAINER_SIZE);
         if (items[slot].type === 0) {
             items[slot].type = picked.type;
@@ -2489,11 +2671,17 @@ class VoxelWorld {
                     const getUv = (face) => getBlockUVs(type, face);
                     const check = (ox, oy, oz) => {
                         const nb = this.getBlock(gx + ox, gy + oy, gz + oz);
-                        return nb === 0 || nb === BLOCKS.LEAVES.id || nb === BLOCKS.CACTUS.id || nb === BLOCKS.JUNGLE_LEAVES.id || nb === BLOCKS.SPIKE.id || nb === BLOCKS.COBWEB.id;
+                        return nb === 0 || nb === BLOCKS.LEAVES.id || nb === BLOCKS.CACTUS.id || nb === BLOCKS.JUNGLE_LEAVES.id || nb === BLOCKS.SPIKE.id || nb === BLOCKS.COBWEB.id || nb === BLOCKS.NULL_WATER.id;
                     };
                     let r = 1, g = 1, b = 1;
                     const isFoliage = (type === 1 || type === 5 || type === 16);
                     if (isFoliage) { r = 0.5; g = 0.8; b = 0.4; }
+                    // Null water: deep blue tint
+                    if (type === BLOCKS.NULL_WATER.id) { r = 0.1; g = 0.3; b = 1.0; }
+                    // Null crystal: emissive cyan tint
+                    if (type === BLOCKS.NULL_CRYSTAL.id) { r = 0.3; g = 0.7; b = 1.0; }
+                    // Null portal: bright blue-white glow
+                    if (type === BLOCKS.NULL_PORTAL.id) { r = 0.6; g = 0.8; b = 1.0; }
 
                     if (check(1,0,0)) {
                         const ndx = positions.length/3;
@@ -2603,6 +2791,8 @@ const SMELTING_RECIPES = [
     { input: BLOCKS.COBBLESTONE.id, output: BLOCKS.STONE.id },
     { input: BLOCKS.LOG.id, output: BLOCKS.COAL_ORE.id },
     { input: BLOCKS.CACTUS.id, output: BLOCKS.GRASS.id },
+    { input: BLOCKS.VOID_SHARD.id, output: BLOCKS.NULL_INGOT.id },  // smelt void shard → null ingot
+    { input: BLOCKS.NULL_ORE.id, output: BLOCKS.NULL_INGOT.id },     // or smelt null ore directly
 ];
 
 let furnaceState = { active: false, input: null, fuel: null, output: null, progress: 0, maxProgress: 100, burnTime: 0, maxBurnTime: 0 };
@@ -2728,6 +2918,280 @@ const world = new VoxelWorld(scene);
 const controls = new PointerLockControls(camera, document.body);
 const mobManager = new MobManager(scene, world);
 
+// ═══════════════════════════════════════════════════════════════════
+//  NULL DIMENSION
+// ═══════════════════════════════════════════════════════════════════
+let currentDimension = 'overworld'; // 'overworld' | 'null'
+let returnPos = null; // where player was when they entered null dimension
+let nullWorld = null; // VoxelWorld instance for null dim (lazy created)
+let nullScene = null;
+
+// Create null dimension scene
+function createNullScene() {
+    const ns = new THREE.Scene();
+    ns.background = new THREE.Color(0x000308);
+    ns.fog = new THREE.Fog(0x00040a, 15, 80);
+    const al = new THREE.AmbientLight(0x1a2a6a, 0.8);
+    ns.add(al);
+    const dl = new THREE.DirectionalLight(0x2244ff, 0.4);
+    dl.position.set(0, 100, 0);
+    ns.add(dl);
+    // Faint blue point lights scattered for atmosphere
+    for (let i = 0; i < 3; i++) {
+        const pl = new THREE.PointLight(0x2255ff, 1.5, 25);
+        pl.position.set(Math.random()*40-20, 5, Math.random()*40-20);
+        ns.add(pl);
+    }
+    return ns;
+}
+
+// Generate a chunk of null dimension terrain
+function generateNullChunkData(cx, cz) {
+    const ns2 = new SimpleNoise(); ns2.seed = 99999;
+    const ns3 = new SimpleNoise(); ns3.seed = 12345;
+    const caveN = new SimpleNoise(); caveN.seed = 77777;
+    const data = new Uint8Array(16 * CHUNK_HEIGHT * 16);
+    const set = (x, y, z, id) => {
+        if (x<0||x>=16||z<0||z>=16||y<0||y>=CHUNK_HEIGHT) return;
+        data[x + 16*(y + CHUNK_HEIGHT*z)] = id;
+    };
+
+    for (let x = 0; x < 16; x++) {
+        for (let z = 0; z < 16; z++) {
+            const gx = cx*16+x, gz = cz*16+z;
+            const h1 = ns2.noise2D(gx*0.025, gz*0.025);
+            const h2 = ns3.noise2D(gx*0.06, gz*0.06);
+            const surf = Math.floor(60 + h1*16 + h2*6);
+
+            // Bedrock floor
+            set(x, 0, z, BLOCKS.NULL_STONE.id);
+
+            for (let y = 1; y < surf; y++) {
+                set(x, y, z, BLOCKS.NULL_STONE.id);
+            }
+
+            // Null soil surface layer (2 deep)
+            set(x, surf, z, BLOCKS.NULL_SOIL.id);
+            set(x, surf-1, z, BLOCKS.NULL_SOIL.id);
+
+            // Null ore veins deep underground
+            for (let y = 5; y < surf-8; y++) {
+                const on = ns2.noise2D(gx*0.1+y*0.07, gz*0.1+y*0.07);
+                if (on > 0.72) set(x, y, z, BLOCKS.NULL_ORE.id);
+            }
+
+            // 3D void caves (more dramatic than overworld)
+            for (let y = 3; y < surf-2; y++) {
+                const cn1 = caveN.noise2D(gx*0.05+y*0.04, gz*0.05);
+                const cn2 = caveN.noise2D(gx*0.05, gz*0.05+y*0.04+50);
+                if (Math.abs(cn1) < 0.12 && Math.abs(cn2) < 0.12) set(x, y, z, 0);
+            }
+
+            // Null water lakes in depressions
+            const waterLevel = 48;
+            for (let y = 1; y <= waterLevel; y++) {
+                if (data[x + 16*(y + CHUNK_HEIGHT*z)] === 0) {
+                    set(x, y, z, BLOCKS.NULL_WATER.id);
+                }
+            }
+
+            // Crystal formations on surface (5% chance)
+            const crystalSeed = Math.abs(Math.sin(gx*17.3+gz*31.7)*9999) % 1;
+            if (crystalSeed < 0.05) {
+                const crystalH = 2 + Math.floor(crystalSeed * 40);
+                for (let cy = surf+1; cy <= surf+crystalH; cy++) {
+                    set(x, cy, z, BLOCKS.NULL_CRYSTAL.id);
+                }
+            }
+        }
+    }
+
+    // Null ruins — stone brick structures
+    const ruinSeed = Math.abs(Math.sin(cx*113+cz*67)*9999) % 1;
+    if (ruinSeed < 0.12) {
+        const rx = 4 + Math.floor(ruinSeed*6), rz = 4 + Math.floor(ruinSeed*6);
+        // Find surface at ruin center
+        const gx2 = cx*16+rx, gz2 = cz*16+rz;
+        const h1 = ns2.noise2D(gx2*0.025, gz2*0.025);
+        const h2 = ns3.noise2D(gx2*0.06, gz2*0.06);
+        const rSurf = Math.floor(60 + h1*16 + h2*6);
+        const ruinR = 4 + Math.floor(ruinSeed*4);
+        for (let dx=-ruinR;dx<=ruinR;dx++) for (let dz=-ruinR;dz<=ruinR;dz++) for (let dy=0;dy<=3;dy++) {
+            const isWall = Math.abs(dx)===ruinR||Math.abs(dz)===ruinR;
+            if (isWall) set(rx+dx, rSurf+1+dy, rz+dz, BLOCKS.NULL_BRICK.id);
+        }
+        // Ruined opening
+        for (let dy=1;dy<=2;dy++) set(rx, rSurf+1+dy, rz-ruinR, 0);
+        // Chest with null loot
+        set(rx, rSurf+1, rz, BLOCKS.CHEST.id);
+        // We'll register this chest in nullWorld.chestData when the world exists
+        const chestKey = `${cx*16+rx},${rSurf+1},${cz*16+rz}`;
+        if (nullWorld && nullWorld.chestData) {
+            nullWorld.chestData.set(chestKey, generateNullRuinsLoot());
+        }
+    }
+
+    return data;
+}
+
+// Lazy-init null world on first use
+function getNullWorld() {
+    if (!nullWorld) {
+        if (!nullScene) nullScene = createNullScene();
+        nullWorld = new VoxelWorld(nullScene);
+        // Override generateChunkData to use null generator
+        nullWorld.generateChunkData = generateNullChunkData;
+    }
+    return nullWorld;
+}
+
+// Enter the Null Dimension
+function enterNullDimension(portalX, portalY, portalZ) {
+    currentDimension = 'null';
+    returnPos = { x: camera.position.x, y: camera.position.y, z: camera.position.z };
+
+    // Swap scene
+    renderer.render(scene, camera); // flush
+    const nw = getNullWorld();
+
+    // Teleport player to matching coordinates in null dim
+    camera.position.set(portalX, 100, portalZ);
+    velocity.set(0, 0, 0);
+
+    // Update environment
+    renderer._scene = nullScene;
+    scene.fog = nullScene.fog; // temporarily override fog for the update loop hack
+    scene.background = nullScene.background;
+    ambientLight.color.setHex(0x1a2a6a);
+    ambientLight.intensity = 0.8;
+    dirLight.color.setHex(0x2244ff);
+    scene.fog.near = 15; scene.fog.far = 80;
+    scene.fog.color.setHex(0x00040a);
+
+    // Copy null world chunks into main scene for rendering
+    nw.update(camera.position);
+    nw.chunks.forEach((grp, key) => {
+        if (!scene.children.includes(grp)) scene.add(grp);
+    });
+
+    // Remove overworld chunks from scene
+    world.chunks.forEach(grp => { if (scene.children.includes(grp)) scene.remove(grp); });
+
+    showDimensionMessage('⬛ You have entered the NULL DIMENSION', '#3355ff');
+}
+
+// Exit back to overworld
+function exitNullDimension() {
+    currentDimension = 'overworld';
+
+    // Remove null chunks from scene
+    if (nullWorld) {
+        nullWorld.chunks.forEach(grp => { if (scene.children.includes(grp)) scene.remove(grp); });
+    }
+
+    // Restore overworld chunks
+    world.chunks.forEach(grp => { if (!scene.children.includes(grp)) scene.add(grp); });
+
+    // Restore overworld environment
+    scene.background = new THREE.Color(0x87CEEB);
+    scene.fog.near = 20; scene.fog.far = (DRAW_DISTANCE * 16) - 10;
+    scene.fog.color.setHex(0x87CEEB);
+    ambientLight.color.setHex(0xffffff);
+    ambientLight.intensity = 0.7;
+    dirLight.color.setHex(0xffffff);
+
+    // Return player to overworld position
+    if (returnPos) {
+        camera.position.set(returnPos.x, returnPos.y + 2, returnPos.z);
+        velocity.set(0, 0, 0);
+    }
+
+    showDimensionMessage('☀️ You have returned to the Overworld', '#88aaff');
+}
+
+function showDimensionMessage(msg, color) {
+    const el = document.getElementById('cmd-feedback') || document.createElement('div');
+    el.style.cssText = `position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
+        color:${color};font-size:28px;font-weight:bold;text-shadow:0 0 20px ${color};
+        z-index:99;pointer-events:none;background:rgba(0,0,0,0.7);padding:20px 40px;border-radius:12px;
+        border:2px solid ${color};`;
+    el.textContent = msg;
+    document.body.appendChild(el);
+    setTimeout(() => { if (el.parentNode) el.parentNode.removeChild(el); }, 3000);
+}
+
+// ═══ PORTAL CREATION ═══
+// Check if a chest on top of a wood block contains the offering
+function checkPortalOffering(chestX, chestY, chestZ) {
+    // Block below chest must be a wood log
+    const below = world.getBlock(chestX, chestY - 1, chestZ);
+    if (below !== BLOCKS.LOG.id && below !== BLOCKS.JUNGLE_LOG.id) return false;
+
+    const chestKey = `${chestX},${chestY},${chestZ}`;
+    const chestItems = world.chestData.get(chestKey);
+    if (!chestItems) return false;
+
+    // Count: 2 diamonds, 1 dirt, 5 gold ingots — EXACTLY these items, nothing else
+    let diamonds = 0, dirt = 0, gold = 0, other = 0;
+    chestItems.forEach(slot => {
+        if (!slot || slot.type === 0) return;
+        if (slot.type === BLOCKS.DIAMOND.id) diamonds += slot.count;
+        else if (slot.type === BLOCKS.DIRT.id) dirt += slot.count;
+        else if (slot.type === BLOCKS.GOLD_INGOT.id) gold += slot.count;
+        else other += slot.count;
+    });
+
+    return diamonds >= 2 && dirt >= 1 && gold >= 5 && other === 0;
+}
+
+function spawnNullPortal(cx, cy, cz) {
+    // The portal is a 3-tall 1-wide obsidian-like frame of NULL_PORTAL blocks (unbreakable)
+    // Shape: 5x4 frame, 3 blocks wide, 4 tall, hollow inside (2x3 portal interior)
+    //   Frame = NULL_PORTAL (unbreakable bedrock-hardness)
+    //   Interior = NULL_PORTAL with portal texture
+    const B = BLOCKS.NULL_PORTAL.id;
+
+    // Remove the offering chest and wood
+    world.setBlock(cx, cy, cz, 0);        // chest
+    world.setBlock(cx, cy-1, cz, 0);      // log below
+
+    // Build portal frame (3 wide, 5 tall)
+    for (let dy = 0; dy <= 4; dy++) {
+        world.setBlock(cx-1, cy+dy, cz, B); // left column
+        world.setBlock(cx+1, cy+dy, cz, B); // right column
+    }
+    // Top and bottom bars
+    for (let dx = -1; dx <= 1; dx++) {
+        world.setBlock(cx+dx, cy-1, cz, B);  // bottom bar
+        world.setBlock(cx+dx, cy+4, cz, B);  // top bar
+    }
+    // Portal interior fill
+    for (let dy = 0; dy <= 3; dy++) {
+        world.setBlock(cx, cy+dy, cz, B);
+    }
+
+    showDimensionMessage('🌀 The NULL PORTAL has opened!', '#2255ff');
+    return true;
+}
+
+// ─── helper: returns the world for the current dimension ───
+function activeWorld() { return (currentDimension === 'null' && nullWorld) ? nullWorld : world; }
+
+function tryActivatePortal(bx, by, bz) {
+    if (activeWorld().getBlock(bx, by, bz) === BLOCKS.NULL_PORTAL.id) {
+        if (currentDimension === 'overworld') {
+            enterNullDimension(bx, by, bz);
+        } else {
+            exitNullDimension();
+        }
+        return true;
+    }
+    return false;
+}
+
+// Furnace recipes for null items
+// null ore → null ingot (via furnace in overworld or null dim)
+
 function updateHealthUI() {
     const hearts = document.querySelectorAll('.heart');
     hearts.forEach((h, i) => { if (i < playerHealth) h.classList.remove('dead'); else h.classList.add('dead'); });
@@ -2828,7 +3292,8 @@ document.addEventListener('mousedown', (e) => {
         if (hit) {
             const p = hit.point.clone().sub(hit.face.normal.clone().multiplyScalar(0.1));
             const bx = Math.floor(p.x), by = Math.floor(p.y), bz = Math.floor(p.z);
-            const id = world.getBlock(bx, by, bz);
+            const id = activeWorld().getBlock(bx, by, bz);
+            if (tryActivatePortal(bx, by, bz)) return; // null portal activation
             if (id === BLOCKS.CRAFTING_TABLE.id) { toggleInventory(true, true); return; }
             if (id === BLOCKS.CHEST.id) { openContainer(`${bx},${by},${bz}`); return; }
             if (id === BLOCKS.FURNACE.id) { openFurnace(); return; }
@@ -2846,7 +3311,8 @@ document.addEventListener('mouseup', () => {
 function getTarget() {
     raycaster.setFromCamera(mouse, camera);
     let objects = [];
-    for (const grp of world.chunks.values()) objects.push(...grp.children);
+    const aw = activeWorld();
+    for (const grp of aw.chunks.values()) objects.push(...grp.children);
     const intersects = raycaster.intersectObjects(objects);
     if (intersects.length > 0 && intersects[0].distance < 6) return intersects[0];
     return null;
@@ -2862,7 +3328,7 @@ function placeBlock() {
     const bx = Math.floor(p.x), by = Math.floor(p.y), bz = Math.floor(p.z);
     const px = Math.floor(camera.position.x), py = Math.floor(camera.position.y), pz = Math.floor(camera.position.z);
     if (!(bx === px && bz === pz && (by === py || by === py - 1))) {
-        world.setBlock(bx, by, bz, item.type);
+        activeWorld().setBlock(bx, by, bz, item.type);
         item.count--; if (item.count === 0) item.type = 0;
         updateUI();
     }
@@ -2882,12 +3348,15 @@ function checkCollision(x, y, z) {
     const minX = Math.floor(x - playerWidth / 2), maxX = Math.floor(x + playerWidth / 2);
     const minY = Math.floor(y - playerHeight + 0.5), maxY = Math.floor(y + 0.5);
     const minZ = Math.floor(z - playerWidth / 2), maxZ = Math.floor(z + playerWidth / 2);
+    const aw = activeWorld();
     for (let ix = minX; ix <= maxX; ix++) {
         for (let iy = minY; iy <= maxY; iy++) {
             for (let iz = minZ; iz <= maxZ; iz++) {
-                const b = world.getBlock(ix, iy, iz);
-                if (b === BLOCKS.TNT.id) { world.explode(ix, iy, iz, 5); return false; }
-                if (b !== 0 && b !== BLOCKS.SPIKE.id && b !== BLOCKS.TNT.id && b !== BLOCKS.COBWEB.id) return true;
+                const b = aw.getBlock(ix, iy, iz);
+                if (b === BLOCKS.TNT.id) { aw.explode(ix, iy, iz, 5); return false; }
+                // NULL_WATER and NULL_PORTAL are not solid for movement
+                if (b !== 0 && b !== BLOCKS.SPIKE.id && b !== BLOCKS.TNT.id && b !== BLOCKS.COBWEB.id
+                    && b !== BLOCKS.NULL_WATER.id && b !== BLOCKS.NULL_PORTAL.id) return true;
             }
         }
     }
@@ -2905,6 +3374,7 @@ document.addEventListener('keydown', (e) => {
         if (isContainerOpen) {
             isContainerOpen = false;
             document.getElementById('container-screen').style.display = 'none';
+            onContainerClose(); // check portal offering
             suppressUnlockBlocker = true;
             controls.lock();
             return;
@@ -2927,6 +3397,7 @@ document.addEventListener('keydown', (e) => {
         if (isContainerOpen) {
             isContainerOpen = false;
             document.getElementById('container-screen').style.display = 'none';
+            onContainerClose(); // check portal offering
             suppressUnlockBlocker = true;
             controls.lock(); return;
         }
@@ -3039,8 +3510,8 @@ function animate() {
         const bx = Math.floor(camera.position.x);
         const by = Math.floor(camera.position.y);
         const bz = Math.floor(camera.position.z);
-        const bBelow = world.getBlock(bx, by - 1, bz);
-        const bIn = world.getBlock(bx, by, bz);
+        const bBelow = activeWorld().getBlock(bx, by - 1, bz);
+        const bIn = activeWorld().getBlock(bx, by, bz);
 
         if (!isCreativeMode && (bBelow === BLOCKS.SPIKE.id || bIn === BLOCKS.SPIKE.id)) {
             spikeTimer += delta;
@@ -3055,12 +3526,13 @@ function animate() {
             if (hit) {
                 const p = hit.point.clone().sub(hit.face.normal.clone().multiplyScalar(0.1));
                 const bx = Math.floor(p.x), by = Math.floor(p.y), bz = Math.floor(p.z);
-                const blockId = world.getBlock(bx, by, bz);
+                const aw = activeWorld();
+                const blockId = aw.getBlock(bx, by, bz);
                 if (!targetBlock || targetBlock.x !== bx || targetBlock.y !== by || targetBlock.z !== bz) {
                     targetBlock = { x: bx, y: by, z: bz, id: blockId }; mineTimer = 0;
                 }
-                if (blockId === BLOCKS.TNT.id) { world.explode(bx, by, bz, 5); isMining = false; mineTimer = 0; return; }
-                if (blockId !== 0 && blockId !== BLOCKS.BEDROCK.id) {
+                if (blockId === BLOCKS.TNT.id) { aw.explode(bx, by, bz, 5); isMining = false; mineTimer = 0; return; }
+                if (blockId !== 0 && blockId !== BLOCKS.BEDROCK.id && blockId !== BLOCKS.NULL_PORTAL.id) {
                     const props = getBlockProps(blockId);
                     let speed = 1.0;
                     const heldItem = inventory[selectedSlot];
@@ -3071,7 +3543,7 @@ function animate() {
                     const pct = Math.min(100, (mineTimer / props.hardness) * 100);
                     document.getElementById('mining-progress').style.width = pct + 'px';
                     if (mineTimer >= props.hardness) {
-                        world.setBlock(bx, by, bz, 0);
+                        aw.setBlock(bx, by, bz, 0);
                         if (blockId === BLOCKS.SAND.id) alertDefenders(camera.position);
                         const drop = props.drop ? props.drop : blockId;
                         addToInventory(drop); mineTimer = 0;
@@ -3135,6 +3607,22 @@ function animate() {
     }
 
     world.update(camera.position);
+
+    // Null dimension: update its world chunks and swap into scene
+    if (currentDimension === 'null' && nullWorld) {
+        nullWorld.update(camera.position);
+        // Add any new null chunks to main scene, remove old overworld ones
+        nullWorld.chunks.forEach((grp, key) => {
+            if (!scene.children.includes(grp)) scene.add(grp);
+        });
+        world.chunks.forEach(grp => { if (scene.children.includes(grp)) scene.remove(grp); });
+        // Subtle portal pulsing: animate null portal light
+        const t2 = performance.now() * 0.001;
+        scene.children.forEach(obj => {
+            if (obj.isPointLight) obj.intensity = 1.2 + Math.sin(t2 * 2) * 0.5;
+        });
+    }
+
     renderer.render(scene, camera);
 }
 
