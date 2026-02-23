@@ -1,13 +1,10 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Survival Voxel Engine</title>
-    <!-- JSZip for Texture Packs -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-    <!-- Import Map -->
     <script type="importmap">
         {
             "imports": {
@@ -18,7 +15,6 @@
     </script>
     <link rel="stylesheet" href="style.css">
 </head>
-
 <body>
     <div id="crosshair"></div>
     <div id="mining-progress"></div>
@@ -27,20 +23,14 @@
     <div id="ui">
         <b>WASD</b> Move | <b>SPACE</b> Jump/Swim | <b>SHIFT</b> Sprint<br>
         <b>Hold L-Click</b> Mine | <b>R-Click</b> Place/Interact<br>
-        <b>E</b> Inventory
+        <b>E</b> Inventory | <b>T</b> Commands | <b>F3</b> Toggle Mode
         <div id="debug">Chunks: 0 | Biome: -</div>
     </div>
 
     <div id="health-bar">
-        <div class="heart"></div>
-        <div class="heart"></div>
-        <div class="heart"></div>
-        <div class="heart"></div>
-        <div class="heart"></div>
-        <div class="heart"></div>
-        <div class="heart"></div>
-        <div class="heart"></div>
-        <div class="heart"></div>
+        <div class="heart"></div><div class="heart"></div><div class="heart"></div>
+        <div class="heart"></div><div class="heart"></div><div class="heart"></div>
+        <div class="heart"></div><div class="heart"></div><div class="heart"></div>
         <div class="heart"></div>
     </div>
 
@@ -76,7 +66,7 @@
                 <h3>Inventory</h3>
                 <div id="container-player-grid"></div>
             </div>
-            <div style="font-size: 14px; color: #aaa;">Click items to move between inventories</div>
+            <div style="font-size:14px;color:#aaa;">Click items to move between inventories</div>
         </div>
     </div>
 
@@ -105,6 +95,7 @@
         </div>
     </div>
 
+    <!-- Chat Modal -->
     <div id="chat-modal">
         <div id="chat-history">
             <div class="chat-entry chat-npc">Survivor: Who goes there?</div>
@@ -116,20 +107,63 @@
         </div>
     </div>
 
+    <!-- Main Menu / Blocker -->
     <div id="blocker">
-        <div style="font-size: 36px; margin-bottom: 20px;">Pixelcraft</div>
-        <div>By Asteroid Works</div>
-        <div style="margin-bottom: 20px;">Click anywhere to Play</div>
-        
-        <button id="texture-btn">Load Texture Pack (Zip/Png)</button>
+        <div style="font-size:42px;font-weight:bold;letter-spacing:2px;margin-bottom:4px;">Pixelcraft</div>
+        <div style="font-size:14px;color:#aaa;margin-bottom:20px;">By Asteroid Works</div>
+
+        <!-- GAMEMODE SELECTOR -->
+        <div style="display:flex;gap:10px;margin-bottom:16px;pointer-events:auto;">
+            <button id="btn-survival" onclick="setGamemodeFromMenu('survival')" style="
+                background:#4a90d9;color:white;border:2px solid #fff;
+                padding:10px 22px;cursor:pointer;border-radius:6px;font-size:15px;font-weight:bold;">
+                Survival
+            </button>
+            <button id="btn-creative" onclick="setGamemodeFromMenu('creative')" style="
+                background:#333;color:#aaa;border:2px solid #555;
+                padding:10px 22px;cursor:pointer;border-radius:6px;font-size:15px;font-weight:bold;">
+                Creative
+            </button>
+        </div>
+
+        <div style="color:#aaa;font-size:13px;margin-bottom:16px;">
+            Creative: <b>F3</b> toggle mode | <b>T</b> commands | <b>Double-Space</b> fly
+        </div>
+
+        <div style="margin-bottom:12px;color:#ddd;font-size:16px;">Click anywhere to Play</div>
+
+        <!-- TEXTURE PACK BUTTONS -->
+        <div style="margin-bottom:10px;">
+            <div style="font-size:13px;color:#aaa;margin-bottom:7px;">🎨 Texture Pack</div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;pointer-events:auto;">
+                <button id="btn-mc-default" style="
+                    background:#5a7a3a;color:white;border:2px solid #8bc34a;
+                    padding:9px 16px;cursor:pointer;border-radius:6px;font-size:13px;font-weight:bold;
+                    display:flex;align-items:center;gap:6px;">
+                    Default Minecraft
+                </button>
+                <button id="btn-faithful" style="
+                    background:#4a5a9a;color:white;border:2px solid #7986cb;
+                    padding:9px 16px;cursor:pointer;border-radius:6px;font-size:13px;font-weight:bold;
+                    display:flex;align-items:center;gap:6px;">
+                    Faithful 64x
+                </button>
+                <button id="texture-btn" style="
+                    background:#333;color:#ccc;border:2px solid #555;
+                    padding:9px 16px;cursor:pointer;border-radius:6px;font-size:13px;">
+                    Custom Pack
+                </button>
+            </div>
+            <div id="tex-status" style="font-size:12px;color:#8bc34a;margin-top:5px;min-height:16px;"></div>
+        </div>
         <input type="file" id="texture-input" style="display:none" accept=".zip,image/*">
 
-        <!-- FIX: Restored Save/Reset Buttons -->
-        <div style="margin-top: 10px; display: flex; gap: 10px; pointer-events: auto;">
-            <button id="save-btn" style="background:#4CAF50; color:white; border:none; padding:10px; cursor:pointer; border-radius: 4px;">Save Game</button>
-            <button id="reset-btn" style="background:#D32F2F; color:white; border:none; padding:10px; cursor:pointer; border-radius: 4px;">Reset World</button>
+        <div style="margin-top:4px;display:flex;gap:10px;pointer-events:auto;">
+            <button id="save-btn" style="background:#4CAF50;color:white;border:none;padding:10px;cursor:pointer;border-radius:4px;">💾 Save</button>
+            <button id="reset-btn" style="background:#D32F2F;color:white;border:none;padding:10px;cursor:pointer;border-radius:4px;">🗑 Reset World</button>
         </div>
-        <div id="save-status" style="margin-top:5px; font-size:12px; color:#aaa; min-height: 20px;"></div>
+        <div id="save-status" style="margin-top:5px;font-size:12px;color:#aaa;min-height:20px;"></div>
+        <div id="resume-status" style="margin-top:3px;font-size:12px;color:#7ec8e3;min-height:16px;"></div>
     </div>
 
     <div id="loading">Generating World...</div>
