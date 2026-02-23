@@ -516,6 +516,7 @@ function createTextureAtlas() {
     const tex = new THREE.CanvasTexture(canvas);
     tex.magFilter = THREE.NearestFilter;
     tex.minFilter = THREE.NearestFilter;
+    tex.generateMipmaps = false;
     return { tex, canvas };
 }
 
@@ -604,9 +605,10 @@ function loadTexturePack(zip, tileSize = 64) {
     const B = 64; // atlas tile output size always 64x64
     const promises = [];
 
-    // Set nearest-neighbor filtering based on pack resolution
-    textureAtlas.magFilter = tileSize <= 16 ? THREE.NearestFilter : THREE.LinearFilter;
-    textureAtlas.minFilter = tileSize <= 16 ? THREE.NearestFilter : THREE.LinearFilter;
+    // Always use NearestFilter on atlas to prevent tile bleeding between adjacent blocks
+    textureAtlas.magFilter = THREE.NearestFilter;
+    textureAtlas.minFilter = THREE.NearestFilter;
+    textureAtlas.generateMipmaps = false;
 
     TEXTURE_MAP.forEach(mapping => {
         const [col, row, names] = mapping;
@@ -847,9 +849,13 @@ const getBlockProps = (id) => Object.values(BLOCKS).find(b => b.id === id) || { 
 const getBlockName = (id) => Object.keys(BLOCKS).find(key => BLOCKS[key].id === id) || 'Unknown';
 
 const getBlockUVs = (id, faceDir) => {
+    // Atlas: 4 cols × 16 rows, each tile 64px on a 256×1024 canvas
+    // Half-pixel inset (0.5/256 and 0.5/1024) prevents bleeding between adjacent tiles
+    const insetU = 0.5 / 256;
+    const insetV = 0.5 / 1024;
     const mapQuad = (c, r) => {
-        const u1 = c * 0.25; const u2 = u1 + 0.25;
-        const v1 = 1 - (r + 1) * 0.0625; const v2 = v1 + 0.0625;
+        const u1 = c * 0.25 + insetU;       const u2 = u1 + 0.25 - insetU * 2;
+        const v1 = 1 - (r + 1) * 0.0625 + insetV; const v2 = v1 + 0.0625 - insetV * 2;
         return [u1, v1, u2, v1, u2, v2, u1, v2];
     };
     if (id === 1) { if (faceDir === 'top') return mapQuad(0, 0); if (faceDir === 'bottom') return mapQuad(2, 0); return mapQuad(3, 2); }
@@ -2168,18 +2174,30 @@ class VoxelWorld {
                 for (let y = 2; y < surf - 4; y++) {
                     const gx = cx * this.cellSize + x;
                     const gz = cz * this.cellSize + z;
-                    // Two offset noise samples — where both are high, carve a cave
                     const cn1 = caveNoise.noise3D(gx * 0.04, y * 0.04, gz * 0.04);
                     const cn2 = caveNoise2.noise3D(gx * 0.04, y * 0.04, gz * 0.04);
-                    // Tunnel carve: abs(n) < threshold
-                    const thresh = y < 20 ? 0.10 : 0.13;
+                    // Wider threshold = bigger caves
+                    const thresh = y < 20 ? 0.15 : 0.18;
                     if (Math.abs(cn1) < thresh && Math.abs(cn2) < thresh) {
                         const idx = x + this.cellSize * (y + CHUNK_HEIGHT * z);
                         if (data[idx] !== BLOCKS.BEDROCK.id) data[idx] = 0;
-                        // Expose floor so lava pools can form below y=12
-                        if (y <= 12) {
-                            const below = x + this.cellSize * ((y - 1) + CHUNK_HEIGHT * z);
-                            if (data[below] !== BLOCKS.BEDROCK.id) data[below] = 0;
+                        // Also carve one block above for taller tunnels
+                        if (y + 1 < surf - 3) {
+                            const idx2 = x + this.cellSize * ((y+1) + CHUNK_HEIGHT * z);
+                            if (data[idx2] !== BLOCKS.BEDROCK.id) data[idx2] = 0;
+                        }
+                    }
+                    // Large cave chambers: looser threshold at specific depths
+                    if (y > 25 && y < 55) {
+                        const cn3 = caveNoise.noise3D(gx * 0.015, y * 0.015, gz * 0.015);
+                        if (Math.abs(cn3) < 0.10) {
+                            for (let dy = -2; dy <= 2; dy++) {
+                                const iy = y + dy;
+                                if (iy > 2 && iy < surf - 4) {
+                                    const idxC = x + this.cellSize * (iy + CHUNK_HEIGHT * z);
+                                    if (data[idxC] !== BLOCKS.BEDROCK.id) data[idxC] = 0;
+                                }
+                            }
                         }
                     }
                 }
@@ -2187,15 +2205,14 @@ class VoxelWorld {
         }
 
         // === RAVINES ===
-        // Use chunk-seeded random — ~15% chance per chunk
         const ravSeed = Math.abs(Math.sin(cx * 73.1 + cz * 127.9) * 9999) % 1;
         if (ravSeed < 0.15) {
             const ravX = 3 + Math.floor((Math.abs(Math.sin(cx * 31.4)) * 9999) % 9);
             const ravZ = 3 + Math.floor((Math.abs(Math.cos(cz * 17.2)) * 9999) % 9);
-            const ravWidth = 2 + Math.floor(ravSeed * 20);  // 2–5 blocks wide
-            const ravDepth = 20 + Math.floor(ravSeed * 30); // 20–50 blocks deep
+            const ravWidth = 4 + Math.floor(ravSeed * 40);  // 4–8 blocks wide
+            const ravDepth = 40 + Math.floor(ravSeed * 50); // 40–90 blocks deep
             const ravAngle = ravSeed * Math.PI;
-            const ravLen = 8 + Math.floor(ravSeed * 8);
+            const ravLen = 12 + Math.floor(ravSeed * 12);   // longer
 
             for (let step = 0; step < ravLen; step++) {
                 const rx = Math.round(ravX + Math.cos(ravAngle) * step * 2);
@@ -2219,119 +2236,159 @@ class VoxelWorld {
             }
         }
 
-        // === MINESHAFTS ===
+        // === MINESHAFTS (greatly expanded) ===
         const mineSeed = Math.abs(Math.sin(cx * 53.7 + cz * 91.3) * 9999) % 1;
         if (mineSeed < 0.20) {
-            const mineY = 20 + Math.floor(mineSeed * 25); // Y 20–45
-            const startX = Math.floor(mineSeed * 8) + 2;
-            const startZ = Math.floor(mineSeed * 8) + 2;
-            const tunnelLen = 6 + Math.floor(mineSeed * 8);
-            const dirX = mineSeed > 0.1 ? 1 : 0;
-            const dirZ = mineSeed <= 0.1 ? 1 : 0;
+            const mineY = 20 + Math.floor(mineSeed * 25);
+            const startX = Math.floor(mineSeed * 6) + 2;
+            const startZ = Math.floor(mineSeed * 6) + 2;
+            const numCorridors = 3 + Math.floor(mineSeed * 3); // 3–5 corridors
+            const corridorLen = 10 + Math.floor(mineSeed * 10); // 10–20 steps long
+
+            const set = (lx, ly, lz, id) => {
+                if (lx < 0 || lx >= 16 || lz < 0 || lz >= 16 || ly < 2 || ly >= CHUNK_HEIGHT) return;
+                data[lx + this.cellSize * (ly + CHUNK_HEIGHT * lz)] = id;
+            };
 
             const carve = (lx, ly, lz, w, h) => {
                 for (let dx = -w; dx <= w; dx++) for (let dy = 0; dy < h; dy++) for (let dz = -w; dz <= w; dz++) {
-                    const bx = lx + dx, bz = lz + dz, by = ly + dy;
-                    if (bx < 0 || bx >= 16 || bz < 0 || bz >= 16 || by < 2 || by >= CHUNK_HEIGHT) continue;
+                    const bx = lx+dx, bz=lz+dz, by=ly+dy;
+                    if (bx<0||bx>=16||bz<0||bz>=16||by<2||by>=CHUNK_HEIGHT) continue;
                     const idx = bx + this.cellSize * (by + CHUNK_HEIGHT * bz);
                     if (data[idx] !== BLOCKS.BEDROCK.id) data[idx] = 0;
                 }
             };
-            const placeSupport = (lx, ly, lz) => {
-                // Oak log pillars + planks ceiling supports every 4 blocks
-                for (let dy = 0; dy < 3; dy++) {
-                    const set = (x2, y2, z2, id) => {
-                        if (x2 < 0 || x2 >= 16 || z2 < 0 || z2 >= 16 || y2 < 1 || y2 >= CHUNK_HEIGHT) return;
-                        data[x2 + this.cellSize * (y2 + CHUNK_HEIGHT * z2)] = id;
-                    };
-                    set(lx - 1, ly + dy, lz, BLOCKS.LOG.id);
-                    set(lx + 1, ly + dy, lz, BLOCKS.LOG.id);
-                    set(lx - 1, ly + 2, lz, BLOCKS.PLANKS.id);
-                    set(lx, ly + 2, lz, BLOCKS.PLANKS.id);
-                    set(lx + 1, ly + 2, lz, BLOCKS.PLANKS.id);
+
+            const placeSupport = (lx, ly, lz, wide) => {
+                const hw = wide;
+                for (let dy = 0; dy < 4; dy++) {
+                    set(lx - hw, ly + dy, lz, BLOCKS.LOG.id);
+                    set(lx + hw, ly + dy, lz, BLOCKS.LOG.id);
                 }
+                for (let dx = -hw; dx <= hw; dx++) set(lx + dx, ly + 3, lz, BLOCKS.PLANKS.id);
             };
 
-            // Main corridor
-            for (let i = 0; i < tunnelLen; i++) {
-                const lx = startX + dirX * i * 2;
-                const lz = startZ + dirZ * i * 2;
-                carve(lx, mineY, lz, 1, 3);
-                if (i % 4 === 0) placeSupport(lx, mineY, lz);
+            const directions = [[1,0],[0,1],[-1,0],[0,-1],[1,1],[-1,1]];
+            const placeChest = (lx, ly, lz) => {
+                if (lx<0||lx>=16||lz<0||lz>=16) return;
+                set(lx, ly, lz, BLOCKS.CHEST.id);
+                this.chestData.set(`${cx*16+lx},${ly},${cz*16+lz}`, generateMineshaftLoot());
+            };
 
-                // Place torch/cobweb decoration
-                if (i % 5 === 2 && lx >= 0 && lx < 16 && lz >= 0 && lz < 16) {
-                    data[lx + this.cellSize * ((mineY - 1) + CHUNK_HEIGHT * lz)] = BLOCKS.COBWEB.id;
+            for (let c = 0; c < numCorridors; c++) {
+                const [dirX, dirZ] = directions[c % directions.length];
+                const cStartX = startX + (c % 3) * 3;
+                const cStartZ = startZ + Math.floor(c / 3) * 3;
+                const cY = mineY - c * 3; // stagger vertical levels
+
+                for (let i = 0; i < corridorLen; i++) {
+                    const lx = Math.min(15, Math.max(0, cStartX + dirX * i * 2));
+                    const lz = Math.min(15, Math.max(0, cStartZ + dirZ * i * 2));
+                    carve(lx, cY, lz, 1, 4); // wider+taller tunnels
+                    if (i % 4 === 0) placeSupport(lx, cY, lz, 1);
+                    if (i % 6 === 3 && lx>=0&&lx<16&&lz>=0&&lz<16) set(lx, cY-1, lz, BLOCKS.COBWEB.id);
                 }
-            }
 
-            // Cross-corridor branch
-            const branchX = startX + Math.floor(tunnelLen / 2) * dirX * 2;
-            const branchZ = startZ + Math.floor(tunnelLen / 2) * dirZ * 2;
-            for (let i = -4; i <= 4; i++) {
-                const lx = branchX + (dirZ) * i * 2;
-                const lz = branchZ + (dirX) * i * 2;
-                carve(lx, mineY, lz, 1, 3);
-            }
+                // Cross branch per corridor
+                const midX = Math.min(15, Math.max(0, cStartX + dirX * (corridorLen/2) * 2));
+                const midZ = Math.min(15, Math.max(0, cStartZ + dirZ * (corridorLen/2) * 2));
+                for (let i = -5; i <= 5; i++) {
+                    const bx = Math.min(15,Math.max(0, midX + dirZ*i*2));
+                    const bz = Math.min(15,Math.max(0, midZ + dirX*i*2));
+                    carve(bx, cY, bz, 1, 4);
+                }
 
-            // Chest at end of mineshaft
-            const chestX = Math.min(15, Math.max(0, startX + dirX * (tunnelLen - 1) * 2));
-            const chestZ = Math.min(15, Math.max(0, startZ + dirZ * (tunnelLen - 1) * 2));
-            if (chestX >= 0 && chestX < 16 && chestZ >= 0 && chestZ < 16) {
-                data[chestX + this.cellSize * (mineY + CHUNK_HEIGHT * chestZ)] = BLOCKS.CHEST.id;
-                const gChestX = cx * 16 + chestX, gChestZ = cz * 16 + chestZ;
-                this.chestData.set(`${gChestX},${mineY},${gChestZ}`, generateMineshaftLoot());
+                // Treasure chest at end
+                const eX = Math.min(15,Math.max(0, cStartX + dirX*(corridorLen-1)*2));
+                const eZ = Math.min(15,Math.max(0, cStartZ + dirZ*(corridorLen-1)*2));
+                placeChest(eX, cY+1, eZ);
             }
         }
 
-        // === UNDERGROUND DUNGEON (stone brick room with mob spawner chest) ===
+        // === UNDERGROUND DUNGEON (massive stone brick fortress) ===
         const dungSeed = Math.abs(Math.sin(cx * 113.0 + cz * 67.5) * 9999) % 1;
         if (dungSeed < 0.10) {
             const dungY = 12 + Math.floor(dungSeed * 20);
-            const dungX = 4 + Math.floor(dungSeed * 7);
-            const dungZ = 4 + Math.floor(dungSeed * 7);
-            const dungR = 4;
-            for (let dx = -dungR; dx <= dungR; dx++) {
-                for (let dz = -dungR; dz <= dungR; dz++) {
-                    for (let dy = 0; dy <= 4; dy++) {
-                        const bx = dungX + dx, bz = dungZ + dz, by = dungY + dy;
-                        if (bx < 0 || bx >= 16 || bz < 0 || bz >= 16 || by < 1 || by >= CHUNK_HEIGHT) continue;
-                        const idx = bx + this.cellSize * (by + CHUNK_HEIGHT * bz);
-                        const isWall = Math.abs(dx) === dungR || Math.abs(dz) === dungR || dy === 0 || dy === 4;
-                        const isMossyCorner = (Math.abs(dx) === dungR && Math.abs(dz) === dungR);
-                        if (isWall) {
-                            data[idx] = isMossyCorner ? BLOCKS.COBBLESTONE.id : BLOCKS.BRICKS.id;
-                        } else {
-                            data[idx] = 0; // hollow inside
+            const dungX = 7; // center of chunk
+            const dungZ = 7;
+            const outerR = 7; // outer wall radius (was 4 — nearly 2x bigger)
+            const innerR = 5; // hollow inside radius
+
+            const set = (lx, ly, lz, id) => {
+                if (lx<0||lx>=16||lz<0||lz>=16||ly<1||ly>=CHUNK_HEIGHT) return;
+                data[lx + this.cellSize * (ly + CHUNK_HEIGHT * lz)] = id;
+            };
+
+            // Multi-floor dungeon: 3 floors, each 4 blocks tall
+            for (let floor = 0; floor < 3; floor++) {
+                const baseY = dungY + floor * 4;
+                for (let dx = -outerR; dx <= outerR; dx++) {
+                    for (let dz = -outerR; dz <= outerR; dz++) {
+                        for (let dy = 0; dy <= 4; dy++) {
+                            const bx = dungX+dx, bz = dungZ+dz, by = baseY+dy;
+                            if (bx<0||bx>=16||bz<0||bz>=16||by<1||by>=CHUNK_HEIGHT) continue;
+                            const isOuterWall = (Math.abs(dx)===outerR || Math.abs(dz)===outerR);
+                            const isCeiling = dy===4;
+                            const isFloor = dy===0;
+                            const isCorner = (Math.abs(dx)===outerR && Math.abs(dz)===outerR);
+                            const insideHollow = (Math.abs(dx)<innerR && Math.abs(dz)<innerR);
+
+                            if (isOuterWall || isCeiling || isFloor) {
+                                const blockType = isCorner ? BLOCKS.COBBLESTONE.id : BLOCKS.BRICKS.id;
+                                set(bx, by, bz, blockType);
+                            } else {
+                                set(bx, by, bz, 0); // hollow
+                            }
                         }
                     }
                 }
+
+                // Torch pillars inside on each floor
+                for (let px2 = -2; px2 <= 2; px2 += 4) {
+                    for (let pz2 = -2; pz2 <= 2; pz2 += 4) {
+                        set(dungX+px2, baseY+1, dungZ+pz2, BLOCKS.COBBLESTONE.id);
+                        set(dungX+px2, baseY+2, dungZ+pz2, BLOCKS.COBBLESTONE.id);
+                    }
+                }
+
+                // Doorways on each wall side (2w x 3h)
+                const doorSides = [[0,-outerR,'z'],[0,outerR,'z'],[-outerR,0,'x'],[outerR,0,'x']];
+                doorSides.forEach(([ddx, ddz]) => {
+                    for (let dw = -1; dw <= 1; dw++) for (let dh = 1; dh <= 3; dh++) {
+                        const bx2 = dungX + ddx + (ddz===0 ? 0 : dw);
+                        const bz2 = dungZ + ddz + (ddx===0 ? 0 : dw);
+                        if (bx2>=0&&bx2<16&&bz2>=0&&bz2<16) set(bx2, baseY+dh, bz2, 0);
+                    }
+                });
+
+                // Staircase between floors (inner corner ramp)
+                if (floor < 2) {
+                    for (let step = 0; step < 4; step++) {
+                        set(dungX+innerR-2, baseY+step+1, dungZ-innerR+2+step, BLOCKS.COBBLESTONE.id);
+                    }
+                }
+
+                // Chests: 2 per floor
+                set(dungX-3, baseY+1, dungZ-3, BLOCKS.CHEST.id);
+                this.chestData.set(`${cx*16+dungX-3},${baseY+1},${cz*16+dungZ-3}`, generateDungeonLoot());
+                set(dungX+3, baseY+1, dungZ+3, BLOCKS.CHEST.id);
+                this.chestData.set(`${cx*16+dungX+3},${baseY+1},${cz*16+dungZ+3}`, generateDungeonLoot());
             }
-            // Door opening
-            const doorX = dungX; const doorZ = dungZ - dungR;
-            for (let dy = 1; dy <= 2; dy++) {
-                if (doorZ >= 0 && doorZ < 16 && doorX >= 0 && doorX < 16) {
-                    data[doorX + this.cellSize * ((dungY + dy) + CHUNK_HEIGHT * doorZ)] = 0;
+
+            // Cobweb dressing throughout
+            for (let i = 0; i < 10; i++) {
+                const cwx = dungX + Math.floor(Math.random()*innerR*2)-innerR;
+                const cwz = dungZ + Math.floor(Math.random()*innerR*2)-innerR;
+                const cwy = dungY + Math.floor(Math.random() * 10) + 2;
+                if (cwx>=0&&cwx<16&&cwz>=0&&cwz<16&&cwy<CHUNK_HEIGHT) {
+                    const idx = cwx+this.cellSize*(cwy+CHUNK_HEIGHT*cwz);
+                    if (data[idx]===0) data[idx]=BLOCKS.COBWEB.id;
                 }
             }
-            // 2 treasure chests
-            const placeChest = (lx, ly, lz) => {
-                if (lx < 0 || lx >= 16 || lz < 0 || lz >= 16) return;
-                data[lx + this.cellSize * (ly + CHUNK_HEIGHT * lz)] = BLOCKS.CHEST.id;
-                const gx2 = cx * 16 + lx, gz2 = cz * 16 + lz;
-                this.chestData.set(`${gx2},${ly},${gz2}`, generateDungeonLoot());
-            };
-            placeChest(dungX - 2, dungY + 1, dungZ - 2);
-            placeChest(dungX + 2, dungY + 1, dungZ + 2);
-            // Cobweb dressing
-            for (let i = 0; i < 4; i++) {
-                const cwx = dungX + Math.floor(Math.random() * dungR * 2) - dungR + 1;
-                const cwz = dungZ + Math.floor(Math.random() * dungR * 2) - dungR + 1;
-                if (cwx >= 0 && cwx < 16 && cwz >= 0 && cwz < 16) {
-                    const cwidx = cwx + this.cellSize * ((dungY + 3) + CHUNK_HEIGHT * cwz);
-                    if (data[cwidx] === 0) data[cwidx] = BLOCKS.COBWEB.id;
-                }
-            }
+
+            // TNT traps on ground floor
+            set(dungX+2, dungY+1, dungZ-2, BLOCKS.TNT.id);
+            set(dungX-2, dungY+1, dungZ+2, BLOCKS.TNT.id);
         }
 
         // === BURIED TREASURE ===
@@ -2340,16 +2397,20 @@ class VoxelWorld {
             const tx = 5 + Math.floor(treasSeed * 6);
             const tz = 5 + Math.floor(treasSeed * 6);
             const surf = surfaceHeight[tx + this.cellSize * tz];
-            const ty = surf - 3 - Math.floor(treasSeed * 4); // 3–7 blocks underground
+            const ty = surf - 3 - Math.floor(treasSeed * 4);
             if (ty > 2 && ty < surf && tx >= 0 && tx < 16 && tz >= 0 && tz < 16) {
-                data[tx + this.cellSize * (ty + CHUNK_HEIGHT * tz)] = BLOCKS.CHEST.id;
-                const gx3 = cx * 16 + tx, gz3 = cz * 16 + tz;
-                this.chestData.set(`${gx3},${ty},${gz3}`, generateBuriedTreasureLoot());
-                // Mark with sandstone cap 1 block above so player can find it
-                if (data[tx + this.cellSize * ((ty + 1) + CHUNK_HEIGHT * tz)] === 0 ||
-                    data[tx + this.cellSize * ((ty + 1) + CHUNK_HEIGHT * tz)] === BLOCKS.DIRT.id) {
-                    data[tx + this.cellSize * ((ty + 1) + CHUNK_HEIGHT * tz)] = BLOCKS.SANDSTONE.id;
+                // Buried chest room (3x3 sandstone box)
+                for (let dx2=-1;dx2<=1;dx2++) for (let dz2=-1;dz2<=1;dz2++) for (let dy2=-1;dy2<=1;dy2++) {
+                    const bx2=tx+dx2, bz2=tz+dz2, by2=ty+dy2;
+                    if (bx2<0||bx2>=16||bz2<0||bz2>=16||by2<1||by2>=CHUNK_HEIGHT) continue;
+                    const isWall=(Math.abs(dx2)===1||Math.abs(dz2)===1||Math.abs(dy2)===1);
+                    data[bx2+this.cellSize*(by2+CHUNK_HEIGHT*bz2)] = isWall ? BLOCKS.SANDSTONE.id : 0;
                 }
+                data[tx + this.cellSize * (ty + CHUNK_HEIGHT * tz)] = BLOCKS.CHEST.id;
+                this.chestData.set(`${cx*16+tx},${ty},${cz*16+tz}`, generateBuriedTreasureLoot());
+                // Sandstone marker 1 block above surface
+                const markerY = surf + 1;
+                if (markerY < CHUNK_HEIGHT) data[tx+this.cellSize*(markerY+CHUNK_HEIGHT*tz)] = BLOCKS.SANDSTONE.id;
             }
         }
 
