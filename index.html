@@ -1,173 +1,128 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Survival Voxel Engine</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-    <script type="importmap">
-        {
-            "imports": {
-                "three": "https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.module.js",
-                "three/examples/": "https://cdn.jsdelivr.net/npm/three@0.128.0/examples/"
-            }
-        }
-    </script>
-    <link rel="stylesheet" href="style.css">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pixelcraft</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script type="importmap">
+  {"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.module.js","three/examples/":"https://cdn.jsdelivr.net/npm/three@0.128.0/examples/"}}
+</script>
+<link rel="stylesheet" href="style.css">
+<script>
+  // If no world param, redirect to world select
+  if(!new URLSearchParams(location.search).get('world')) window.location.replace('worlds.html');
+</script>
 </head>
 <body>
-    <div id="crosshair"></div>
-    <div id="mining-progress"></div>
-    <div id="damage-overlay"></div>
+<div id="crosshair"></div>
+<div id="mining-progress"></div>
+<div id="damage-overlay"></div>
 
-    <div id="ui">
-        <b>WASD</b> Move | <b>SPACE</b> Jump/Swim | <b>SHIFT</b> Sprint<br>
-        <b>Hold L-Click</b> Mine | <b>R-Click</b> Place/Interact<br>
-        <b>E</b> Inventory | <b>T</b> Commands | <b>F3</b> Toggle Mode
-        <div id="debug">Chunks: 0 | Biome: -</div>
+<div id="ui">
+  <b>WASD</b> Move | <b>SPACE</b> Jump | <b>SHIFT</b> Sprint<br>
+  <b>Hold L-Click</b> Mine | <b>R-Click</b> Place/Interact<br>
+  <b>E</b> Inventory | <b>T</b> Commands | <b>F3</b> Creative
+  <div id="debug">Loading chunks...</div>
+</div>
+
+<div id="health-bar">
+  <div class="heart"></div><div class="heart"></div><div class="heart"></div>
+  <div class="heart"></div><div class="heart"></div><div class="heart"></div>
+  <div class="heart"></div><div class="heart"></div><div class="heart"></div>
+  <div class="heart"></div>
+</div>
+<div id="hotbar"></div>
+
+<!-- Inventory -->
+<div id="inventory-screen" class="screen-overlay">
+  <div id="inv-container">
+    <div><h2>Inventory</h2><div id="inv-grid"></div></div>
+    <div id="item-details">
+      <h3 id="selected-item-name">Select Item</h3>
+      <div id="lore-text"></div>
+      <button id="gemini-btn">✨ Analyze</button>
     </div>
-
-    <div id="health-bar">
-        <div class="heart"></div><div class="heart"></div><div class="heart"></div>
-        <div class="heart"></div><div class="heart"></div><div class="heart"></div>
-        <div class="heart"></div><div class="heart"></div><div class="heart"></div>
-        <div class="heart"></div>
+    <div id="crafting-menu">
+      <h2 id="crafting-title">Crafting</h2>
+      <div id="recipe-list"></div>
     </div>
+  </div>
+</div>
 
-    <div id="hotbar"></div>
+<!-- Chest -->
+<div id="container-screen" class="screen-overlay">
+  <div id="container-wrapper">
+    <div class="inventory-section"><h3>Chest</h3><div id="chest-grid"></div></div>
+    <div class="inventory-section"><h3>Inventory</h3><div id="container-player-grid"></div></div>
+    <div style="font-size:13px;color:#888;margin-top:6px;">Click items to transfer</div>
+  </div>
+</div>
 
-    <!-- Main Inventory Screen -->
-    <div id="inventory-screen" class="screen-overlay">
-        <div id="inv-container">
-            <div>
-                <h2>Inventory</h2>
-                <div id="inv-grid"></div>
-            </div>
-            <div id="item-details">
-                <h3 id="selected-item-name">Select Item</h3>
-                <div id="lore-text"></div>
-                <button id="gemini-btn">✨ Analyze</button>
-            </div>
-            <div id="crafting-menu">
-                <h2 id="crafting-title">Crafting</h2>
-                <div id="recipe-list"></div>
-            </div>
+<!-- Furnace -->
+<div id="furnace-screen" class="screen-overlay">
+  <div id="furnace-wrapper">
+    <div class="furnace-section"><h3>Furnace</h3>
+      <div class="furnace-layout">
+        <div class="furnace-col">
+          <div id="furnace-input" class="slot" data-type="input"></div>
+          <div id="furnace-fuel" class="slot" data-type="fuel"></div>
         </div>
+        <div class="furnace-col arrow-col"><div id="furnace-progress">→</div></div>
+        <div class="furnace-col"><div id="furnace-output" class="slot" data-type="output"></div></div>
+      </div>
     </div>
+    <div class="inventory-section"><h3>Inventory</h3><div id="furnace-player-grid"></div></div>
+  </div>
+</div>
 
-    <!-- Container (Chest) Screen -->
-    <div id="container-screen" class="screen-overlay">
-        <div id="container-wrapper">
-            <div class="inventory-section">
-                <h3>Chest</h3>
-                <div id="chest-grid"></div>
-            </div>
-            <div class="inventory-section">
-                <h3>Inventory</h3>
-                <div id="container-player-grid"></div>
-            </div>
-            <div style="font-size:14px;color:#aaa;">Click items to move between inventories</div>
-        </div>
+<!-- Chat -->
+<div id="chat-modal">
+  <div id="chat-history"><div class="chat-entry chat-npc">Survivor: Who goes there?</div></div>
+  <div id="chat-controls">
+    <input type="text" id="chat-input" placeholder="Say hello...">
+    <button id="chat-send">Send</button>
+    <button id="chat-close">Leave</button>
+  </div>
+</div>
+
+<!-- Pause / Main Menu -->
+<div id="blocker">
+  <div style="font-size:34px;font-weight:bold;letter-spacing:2px;margin-bottom:2px;">Pixelcraft</div>
+  <div id="world-name-display" style="font-size:13px;color:#7ec8e3;margin-bottom:14px;">Loading world...</div>
+
+  <div style="display:flex;gap:8px;margin-bottom:12px;pointer-events:auto;">
+    <button id="btn-survival" onclick="setGamemodeFromMenu('survival')" style="background:#4a90d9;color:white;border:2px solid #fff;padding:8px 16px;cursor:pointer;border-radius:6px;font-size:13px;font-weight:bold;">⚔️ Survival</button>
+    <button id="btn-creative" onclick="setGamemodeFromMenu('creative')" style="background:#333;color:#aaa;border:2px solid #555;padding:8px 16px;cursor:pointer;border-radius:6px;font-size:13px;font-weight:bold;">🎨 Creative</button>
+  </div>
+
+  <div style="margin-bottom:12px;">
+    <div style="font-size:12px;color:#aaa;margin-bottom:5px;">🎨 Texture Pack</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:center;pointer-events:auto;">
+      <button id="btn-mc-default" style="background:#5a7a3a;color:white;border:2px solid #8bc34a;padding:7px 12px;cursor:pointer;border-radius:6px;font-size:12px;font-weight:bold;">🟫 Default</button>
+      <button id="btn-faithful" style="background:#4a5a9a;color:white;border:2px solid #7986cb;padding:7px 12px;cursor:pointer;border-radius:6px;font-size:12px;font-weight:bold;">✨ Faithful 64x</button>
+      <button id="texture-btn" style="background:#333;color:#ccc;border:2px solid #555;padding:7px 12px;cursor:pointer;border-radius:6px;font-size:12px;">📂 Custom</button>
     </div>
+    <div id="tex-status" style="font-size:11px;color:#8bc34a;margin-top:4px;min-height:14px;"></div>
+  </div>
+  <input type="file" id="texture-input" style="display:none" accept=".zip,image/*">
 
-    <!-- Furnace Screen -->
-    <div id="furnace-screen" class="screen-overlay">
-        <div id="furnace-wrapper">
-            <div class="furnace-section">
-                <h3>Furnace</h3>
-                <div class="furnace-layout">
-                    <div class="furnace-col">
-                        <div id="furnace-input" class="slot" data-type="input"></div>
-                        <div id="furnace-fuel" class="slot" data-type="fuel"></div>
-                    </div>
-                    <div class="furnace-col arrow-col">
-                        <div id="furnace-progress">→</div>
-                    </div>
-                    <div class="furnace-col">
-                        <div id="furnace-output" class="slot" data-type="output"></div>
-                    </div>
-                </div>
-            </div>
-            <div class="inventory-section">
-                <h3>Inventory</h3>
-                <div id="furnace-player-grid"></div>
-            </div>
-        </div>
-    </div>
+  <div style="margin-bottom:10px;color:#ddd;font-size:14px;">Click anywhere to Resume</div>
 
-    <!-- Chat Modal -->
-    <div id="chat-modal">
-        <div id="chat-history">
-            <div class="chat-entry chat-npc">Survivor: Who goes there?</div>
-        </div>
-        <div id="chat-controls">
-            <input type="text" id="chat-input" placeholder="Say hello...">
-            <button id="chat-send">Send</button>
-            <button id="chat-close">Leave</button>
-        </div>
-    </div>
+  <div style="display:flex;gap:8px;pointer-events:auto;">
+    <button id="save-btn" style="background:#4CAF50;color:white;border:none;padding:8px 12px;cursor:pointer;border-radius:4px;font-size:13px;">💾 Save</button>
+    <button id="reset-btn" style="background:#D32F2F;color:white;border:none;padding:8px 12px;cursor:pointer;border-radius:4px;font-size:13px;">🗑 Reset</button>
+    <button onclick="window.location.href='worlds.html'" style="background:#445566;color:white;border:none;padding:8px 12px;cursor:pointer;border-radius:4px;font-size:13px;">🌍 All Worlds</button>
+  </div>
+  <div id="save-status" style="margin-top:5px;font-size:11px;color:#aaa;min-height:16px;"></div>
+  <div id="resume-status" style="margin-top:2px;font-size:11px;color:#7ec8e3;min-height:14px;"></div>
+</div>
 
-    <!-- Main Menu / Blocker -->
-    <div id="blocker">
-        <div style="font-size:42px;font-weight:bold;letter-spacing:2px;margin-bottom:4px;">Pixelcraft</div>
-        <div style="font-size:14px;color:#aaa;margin-bottom:20px;">By Asteroid Works</div>
+<div id="loading" style="position:fixed;inset:0;background:#000;color:#fff;display:flex;align-items:center;justify-content:center;font-size:20px;font-family:monospace;z-index:500;flex-direction:column;gap:12px;">
+  <div>⏳ Loading World...</div>
+  <div style="font-size:13px;color:#888;">Chunks will stream in as you explore</div>
+</div>
 
-        <!-- GAMEMODE SELECTOR -->
-        <div style="display:flex;gap:10px;margin-bottom:16px;pointer-events:auto;">
-            <button id="btn-survival" onclick="setGamemodeFromMenu('survival')" style="
-                background:#4a90d9;color:white;border:2px solid #fff;
-                padding:10px 22px;cursor:pointer;border-radius:6px;font-size:15px;font-weight:bold;">
-                ⚔️ Survival
-            </button>
-            <button id="btn-creative" onclick="setGamemodeFromMenu('creative')" style="
-                background:#333;color:#aaa;border:2px solid #555;
-                padding:10px 22px;cursor:pointer;border-radius:6px;font-size:15px;font-weight:bold;">
-                🎨 Creative
-            </button>
-        </div>
-
-        <div style="color:#aaa;font-size:13px;margin-bottom:16px;">
-            Creative: <b>F3</b> toggle mode | <b>T</b> commands | <b>Double-Space</b> fly
-        </div>
-
-        <div style="margin-bottom:12px;color:#ddd;font-size:16px;">Click anywhere to Play</div>
-
-        <!-- TEXTURE PACK BUTTONS -->
-        <div style="margin-bottom:10px;">
-            <div style="font-size:13px;color:#aaa;margin-bottom:7px;">🎨 Texture Pack</div>
-            <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;pointer-events:auto;">
-                <button id="btn-mc-default" style="
-                    background:#5a7a3a;color:white;border:2px solid #8bc34a;
-                    padding:9px 16px;cursor:pointer;border-radius:6px;font-size:13px;font-weight:bold;
-                    display:flex;align-items:center;gap:6px;">
-                    🟫 Default Minecraft
-                </button>
-                <button id="btn-faithful" style="
-                    background:#4a5a9a;color:white;border:2px solid #7986cb;
-                    padding:9px 16px;cursor:pointer;border-radius:6px;font-size:13px;font-weight:bold;
-                    display:flex;align-items:center;gap:6px;">
-                    ✨ Faithful 64x
-                </button>
-                <button id="texture-btn" style="
-                    background:#333;color:#ccc;border:2px solid #555;
-                    padding:9px 16px;cursor:pointer;border-radius:6px;font-size:13px;">
-                    📂 Custom Pack
-                </button>
-            </div>
-            <div id="tex-status" style="font-size:12px;color:#8bc34a;margin-top:5px;min-height:16px;"></div>
-        </div>
-        <input type="file" id="texture-input" style="display:none" accept=".zip,image/*">
-
-        <div style="margin-top:4px;display:flex;gap:10px;pointer-events:auto;">
-            <button id="save-btn" style="background:#4CAF50;color:white;border:none;padding:10px;cursor:pointer;border-radius:4px;">💾 Save</button>
-            <button id="reset-btn" style="background:#D32F2F;color:white;border:none;padding:10px;cursor:pointer;border-radius:4px;">🗑 Reset World</button>
-        </div>
-        <div id="save-status" style="margin-top:5px;font-size:12px;color:#aaa;min-height:20px;"></div>
-        <div id="resume-status" style="margin-top:3px;font-size:12px;color:#7ec8e3;min-height:16px;"></div>
-    </div>
-
-    <div id="loading">Generating World...</div>
-
-    <script type="module" src="script.js"></script>
+<script type="module" src="script.js"></script>
 </body>
 </html>
