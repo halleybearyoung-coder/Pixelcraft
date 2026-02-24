@@ -113,7 +113,9 @@ body {
 /* ---- SCREEN OVERLAYS ---- */
 .screen-overlay {
     display: none; position: fixed; inset: 0;
-    background: rgba(0,0,0,0.87); z-index: 20; color: white;
+    background: rgba(0,0,0,0.87);
+    /* Put inventory/chest/furnace ABOVE the home/blocker screen */
+    z-index: 60; color: white;
     justify-content: center; align-items: center; flex-direction: column;
 }
 #inv-container, #container-wrapper {
