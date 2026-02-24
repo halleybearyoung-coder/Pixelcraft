@@ -17,7 +17,11 @@ const IS_GUEST       = _urlParams.get('isGuest') === '1';
 // Draw distance from world settings (default 4 — not 5 to avoid lag)
 const DRAW_DISTANCE  = Math.min(7, Math.max(2, parseInt(_urlParams.get('renderDist') || '4')));
 
-
+// Redirect to worlds if no world selected
+if (!_urlParams.get('world')) {
+  // Only redirect on a real browser (not dev tools)
+  if (typeof window !== 'undefined') window.location.replace('worlds.html');
+}
 
 // Set world info in pause menu once DOM is ready (may already be ready by now)
 function applyWorldParams() {
@@ -60,12 +64,8 @@ class SaveManager {
 
     static async savePlayer(data) {
         if (!this.db) return;
-        return new Promise((resolve, reject) => {
-            const tx = this.db.transaction(['player'], 'readwrite');
-            tx.objectStore('player').put(data, 'main');
-            tx.oncomplete = () => resolve();
-            tx.onerror = () => reject(tx.error);
-        });
+        const tx = this.db.transaction(['player'], 'readwrite');
+        tx.objectStore('player').put(data, 'main');
     }
 
     static async loadPlayer() {
@@ -81,12 +81,8 @@ class SaveManager {
     // Save a single chunk
     static async saveChunk(key, data) {
         if (!this.db) return;
-        return new Promise((resolve, reject) => {
-            const tx = this.db.transaction(['chunks'], 'readwrite');
-            tx.objectStore('chunks').put(Array.from(data), key); // Uint8Array → plain array for IDB
-            tx.oncomplete = () => resolve();
-            tx.onerror = () => reject(tx.error);
-        });
+        const tx = this.db.transaction(['chunks'], 'readwrite');
+        tx.objectStore('chunks').put(Array.from(data), key); // Uint8Array → plain array for IDB
     }
 
     // Load a single chunk (lazy) — returns null if not saved
@@ -4114,7 +4110,7 @@ function runCommand(raw, output, input) {
             cmdLog(output, `❌ Unknown command: /${cmd}  — type /help`, '#f44336');
     }
 }
-async function saveGame() {
+function saveGame() {
     if (typeof SaveManager === 'undefined' || typeof world === 'undefined') return;
     if (!SaveManager.db) return; // DB not ready yet
 
@@ -4129,16 +4125,15 @@ async function saveGame() {
         inventory: typeof inventory !== 'undefined' ? JSON.parse(JSON.stringify(inventory)) : [],
         chests: Array.from(world.chestData.entries())
     };
-    await SaveManager.savePlayer(pData);
+    SaveManager.savePlayer(pData);
 
     // Only save chunks that were modified (dirty) — not all loaded chunks
-    const chunkSaves = [];
+    // This avoids saving huge amounts of unmodified procedural chunks every 10s
     world.dirtyChunks.forEach(key => {
         const data = world.chunkData.get(key);
-        if (data) chunkSaves.push(SaveManager.saveChunk(key, data));
+        if (data) SaveManager.saveChunk(key, data);
     });
     world.dirtyChunks.clear();
-    await Promise.all(chunkSaves);
 
     // Update save status
     const ss = document.getElementById('save-status');
@@ -4165,56 +4160,51 @@ if (blocker) {
     blocker.onclick = (e) => { if (e.target === blocker && typeof controls !== 'undefined') controls.lock(); };
 }
 
-function hideLoadingAndStart() {
-    const loadEl = document.getElementById('loading');
-    if (loadEl) loadEl.style.display = 'none';
-    if (typeof animate === 'function') animate();
-}
-
 if (typeof SaveManager !== 'undefined') {
-    SaveManager.init()
-        .then(async () => {
-            try {
-                const pData = await SaveManager.loadPlayer();
-                if (pData) {
-                    const spawnX = typeof pData.x === 'number' ? pData.x : 0;
-                    const spawnZ = typeof pData.z === 'number' ? pData.z : 0;
-                    const spawnY = 100;
+    SaveManager.init().then(async () => {
+        // loadMetadata is now a no-op — chunks load lazily on demand
 
-                    camera.position.set(spawnX, spawnY, spawnZ);
-                    camera.rotation.set(pData.rx || 0, pData.ry || 0, 0);
+        const pData = await SaveManager.loadPlayer();
+        if (pData) {
+            // Exact X and Z, always Y=100 so player never spawns inside terrain
+            const spawnX = typeof pData.x === 'number' ? pData.x : 0;
+            const spawnZ = typeof pData.z === 'number' ? pData.z : 0;
+            const spawnY = 100;
 
-                    if (typeof playerHealth !== 'undefined') playerHealth = Math.max(1, pData.health || 10);
-                    if (typeof updateHealthUI === 'function') updateHealthUI();
+            camera.position.set(spawnX, spawnY, spawnZ);
+            camera.rotation.set(pData.rx || 0, pData.ry || 0, 0);
 
-                    if (pData.inventory && typeof inventory !== 'undefined') {
-                        for (let i = 0; i < INVENTORY_SIZE; i++) {
-                            if (pData.inventory[i]) inventory[i] = pData.inventory[i];
-                        }
-                    }
-                    if (typeof updateUI === 'function') updateUI();
+            if (typeof playerHealth !== 'undefined') playerHealth = Math.max(1, pData.health || 10);
+            if (typeof updateHealthUI === 'function') updateHealthUI();
 
-                    if (pData.chests && typeof world !== 'undefined') {
-                        pData.chests.forEach(([k, v]) => world.chestData.set(k, v));
-                    }
-
-                    const resumeEl = document.getElementById('resume-status');
-                    if (resumeEl) {
-                        resumeEl.innerText = `✅ World restored — X:${spawnX.toFixed(0)} Z:${spawnZ.toFixed(0)} | Click to Play`;
-                    }
-                } else {
-                    camera.position.set(0, 100, 0);
-                    const resumeEl = document.getElementById('resume-status');
-                    if (resumeEl) resumeEl.innerText = '🌍 New world — Click to Play';
+            if (pData.inventory && typeof inventory !== 'undefined') {
+                for (let i = 0; i < INVENTORY_SIZE; i++) {
+                    if (pData.inventory[i]) inventory[i] = pData.inventory[i];
                 }
-            } catch (_) {
-                camera.position.set(0, 100, 0);
             }
-        })
-        .catch(() => {})
-        .finally(hideLoadingAndStart);
+            if (typeof updateUI === 'function') updateUI();
+
+            if (pData.chests && typeof world !== 'undefined') {
+                pData.chests.forEach(([k, v]) => world.chestData.set(k, v));
+            }
+
+            const resumeEl = document.getElementById('resume-status');
+            if (resumeEl) {
+                resumeEl.innerText = `✅ World restored — X:${spawnX.toFixed(0)} Z:${spawnZ.toFixed(0)} | Click to Play`;
+            }
+        } else {
+            // Fresh new game
+            camera.position.set(0, 100, 0);
+            const resumeEl = document.getElementById('resume-status');
+            if (resumeEl) resumeEl.innerText = '🌍 New world — Click to Play';
+        }
+
+        const loadEl = document.getElementById('loading');
+        if (loadEl) loadEl.style.display = 'none';
+        animate();
+    });
 } else {
-    hideLoadingAndStart();
+    animate();
 }
 
 // Auto-save every 10 seconds in background
