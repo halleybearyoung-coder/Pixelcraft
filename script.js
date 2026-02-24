@@ -64,8 +64,12 @@ class SaveManager {
 
     static async savePlayer(data) {
         if (!this.db) return;
-        const tx = this.db.transaction(['player'], 'readwrite');
-        tx.objectStore('player').put(data, 'main');
+        return new Promise((resolve, reject) => {
+            const tx = this.db.transaction(['player'], 'readwrite');
+            tx.objectStore('player').put(data, 'main');
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => reject(tx.error);
+        });
     }
 
     static async loadPlayer() {
@@ -81,8 +85,12 @@ class SaveManager {
     // Save a single chunk
     static async saveChunk(key, data) {
         if (!this.db) return;
-        const tx = this.db.transaction(['chunks'], 'readwrite');
-        tx.objectStore('chunks').put(Array.from(data), key); // Uint8Array → plain array for IDB
+        return new Promise((resolve, reject) => {
+            const tx = this.db.transaction(['chunks'], 'readwrite');
+            tx.objectStore('chunks').put(Array.from(data), key); // Uint8Array → plain array for IDB
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => reject(tx.error);
+        });
     }
 
     // Load a single chunk (lazy) — returns null if not saved
@@ -4110,7 +4118,7 @@ function runCommand(raw, output, input) {
             cmdLog(output, `❌ Unknown command: /${cmd}  — type /help`, '#f44336');
     }
 }
-function saveGame() {
+async function saveGame() {
     if (typeof SaveManager === 'undefined' || typeof world === 'undefined') return;
     if (!SaveManager.db) return; // DB not ready yet
 
@@ -4125,15 +4133,16 @@ function saveGame() {
         inventory: typeof inventory !== 'undefined' ? JSON.parse(JSON.stringify(inventory)) : [],
         chests: Array.from(world.chestData.entries())
     };
-    SaveManager.savePlayer(pData);
+    await SaveManager.savePlayer(pData);
 
     // Only save chunks that were modified (dirty) — not all loaded chunks
-    // This avoids saving huge amounts of unmodified procedural chunks every 10s
+    const chunkSaves = [];
     world.dirtyChunks.forEach(key => {
         const data = world.chunkData.get(key);
-        if (data) SaveManager.saveChunk(key, data);
+        if (data) chunkSaves.push(SaveManager.saveChunk(key, data));
     });
     world.dirtyChunks.clear();
+    await Promise.all(chunkSaves);
 
     // Update save status
     const ss = document.getElementById('save-status');
