@@ -3,57 +3,19 @@ import { PointerLockControls } from 'three/examples/jsm/controls/PointerLockCont
 
 const apiKey = ""; // API Key
 
-// ── Read world params from URL ──────────────────────────────────────
-const _urlParams = new URLSearchParams(location.search);
-const WORLD_ID       = _urlParams.get('world') || 'default';
-const WORLD_NAME     = _urlParams.get('name') || 'World';
-const WORLD_SEED     = parseInt(_urlParams.get('seed') || '42');
-const WORLD_GAMEMODE = _urlParams.get('gamemode') || 'survival';
-const WORLD_DIFFICULTY = _urlParams.get('difficulty') || 'normal';
-const WORLD_USERNAME = _urlParams.get('username') || 'Player';
-const IS_MULTIPLAYER = _urlParams.get('multiplayer') === '1';
-const INVITE_CODE    = _urlParams.get('inviteCode') || '';
-const IS_GUEST       = _urlParams.get('isGuest') === '1';
-// Draw distance from world settings (default 4 — not 5 to avoid lag)
-const DRAW_DISTANCE  = Math.min(7, Math.max(2, parseInt(_urlParams.get('renderDist') || '4')));
-
-// Redirect to worlds if no world selected
-if (!_urlParams.get('world')) {
-  // Only redirect on a real browser (not dev tools)
-  if (typeof window !== 'undefined') window.location.replace('worlds.html');
-}
-
-// Set world info in pause menu once DOM is ready (may already be ready by now)
-function applyWorldParams() {
-  const nameEl = document.getElementById('world-name-display');
-  if (nameEl) nameEl.textContent = `🌍 ${WORLD_NAME}${IS_MULTIPLAYER ? ' 🌐' : ''}`;
-  // Apply gamemode from URL
-  if (WORLD_GAMEMODE === 'creative') {
-    // Will be applied after isCreativeMode is declared
-    setTimeout(() => {
-      if (typeof isCreativeMode !== 'undefined' && typeof setGamemodeFromMenu === 'function') {
-        setGamemodeFromMenu('creative');
-      }
-    }, 100);
-  }
-}
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', applyWorldParams);
-} else {
-  applyWorldParams();
-}
-
-// ── SaveManager — namespaced per world, lazy chunk loading ───────────
 class SaveManager {
-    static dbName = `PixelcraftDB_${WORLD_ID}`;
-    static version = 2;
+    static dbName = 'PixelcraftDB';
+    static version = 1;
     static db = null;
 
     static async init() {
-        return new Promise((resolve) => {
+        return new Promise((resolve, reject) => {
             const request = indexedDB.open(this.dbName, this.version);
-            request.onerror = () => resolve();
-            request.onsuccess = e => { this.db = e.target.result; resolve(); };
+            request.onerror = e => { console.error("DB Error", e); resolve(); };
+            request.onsuccess = e => {
+                this.db = e.target.result;
+                resolve();
+            };
             request.onupgradeneeded = e => {
                 const db = e.target.result;
                 if (!db.objectStoreNames.contains('player')) db.createObjectStore('player');
@@ -78,43 +40,49 @@ class SaveManager {
         });
     }
 
-    // Save a single chunk
     static async saveChunk(key, data) {
         if (!this.db) return;
         const tx = this.db.transaction(['chunks'], 'readwrite');
-        tx.objectStore('chunks').put(Array.from(data), key); // Uint8Array → plain array for IDB
+        tx.objectStore('chunks').put(data, key);
     }
 
-    // Load a single chunk (lazy) — returns null if not saved
     static async loadChunk(key) {
         if (!this.db) return null;
         return new Promise(resolve => {
             const tx = this.db.transaction(['chunks'], 'readonly');
             const req = tx.objectStore('chunks').get(key);
-            req.onsuccess = () => {
-                if (req.result) resolve(new Uint8Array(req.result));
-                else resolve(null);
-            };
+            req.onsuccess = () => resolve(req.result);
             req.onerror = () => resolve(null);
         });
     }
 
-    // Get all saved chunk keys (no data) for the dirty-save pass
-    static async getSavedKeys() {
-        if (!this.db) return [];
+    static async loadAllChunks() {
+        if (!this.db) return new Map();
         return new Promise(resolve => {
+            const chunkMap = new Map();
             const tx = this.db.transaction(['chunks'], 'readonly');
-            const req = tx.objectStore('chunks').getAllKeys();
-            req.onsuccess = () => resolve(req.result || []);
-            req.onerror = () => resolve([]);
+            const store = tx.objectStore('chunks');
+            const req = store.openCursor();
+            req.onsuccess = (e) => {
+                const cursor = e.target.result;
+                if (cursor) {
+                    chunkMap.set(cursor.key, cursor.value);
+                    cursor.continue();
+                } else {
+                    resolve(chunkMap);
+                }
+            };
         });
     }
 
     static resetWorld() {
-        if (this.db) { this.db.close(); }
-        const req = indexedDB.deleteDatabase(this.dbName);
-        req.onsuccess = () => window.location.reload();
-        req.onerror = () => window.location.reload();
+        if (this.db) {
+            this.db.close();
+            const req = indexedDB.deleteDatabase(this.dbName);
+            req.onsuccess = () => window.location.reload();
+        } else {
+            window.location.reload();
+        }
     }
 }
 
@@ -270,7 +238,7 @@ let commandHistoryIdx = -1;
 // --- CONFIGURATION ---
 const CHUNK_SIZE = 16;
 const CHUNK_HEIGHT = 128;
-// DRAW_DISTANCE is set from world URL params (line ~13)
+const DRAW_DISTANCE = 5;
 const DAY_LENGTH = 1200;
 let dayTime = 0;
 
@@ -2182,12 +2150,12 @@ class VoxelWorld {
         this.dirtyChunks = new Set();
         this.scene = scene;
         this.cellSize = CHUNK_SIZE;
-        this.genQueue = [];            // { cx, cz, key, dist }
-        this.pendingChunks = new Set(); // keys in-flight
     }
 
     async loadMetadata() {
-        // Lazy: chunks loaded on demand, nothing preloaded at startup
+        const savedChunks = await SaveManager.loadAllChunks();
+        savedChunks.forEach((v, k) => { if (v) this.chunkData.set(k, v); });
+        console.log(`Loaded ${savedChunks.size} chunks from save.`);
     }
 
     getBlock(x, y, z) {
@@ -2205,7 +2173,6 @@ class VoxelWorld {
         if (y < 0 || y >= CHUNK_HEIGHT) return;
         const cx = Math.floor(x / this.cellSize); const cz = Math.floor(z / this.cellSize);
         const key = `${cx},${cz}`;
-        this.dirtyChunks.add(key); // mark chunk as modified so it gets saved
         if (!this.chunkData.has(key)) return;
         const data = this.chunkData.get(key);
         const lx = ((x % this.cellSize) + this.cellSize) % this.cellSize;
@@ -2793,61 +2760,24 @@ class VoxelWorld {
         if (bVal > 0.5) biomeName = 'DESERT';
         else if (bVal < -0.5) biomeName = 'SNOW';
         else if (humid > 0.3 && bVal > -0.2 && bVal < 0.3) biomeName = 'JUNGLE';
-        const debugEl = document.getElementById('debug');
-        if (debugEl) debugEl.innerText = `Chunks: ${this.chunks.size} | Biome: ${biomeName} | Y: ${Math.floor(playerPos.y)} | ⏳${this.genQueue.length}`;
+        document.getElementById('debug').innerText = `Chunks: ${this.chunks.size} | Biome: ${biomeName} | Y: ${Math.floor(playerPos.y)}`;
 
-        // Enqueue chunks that need generating (never generate synchronously here)
         for (let x = -DRAW_DISTANCE; x <= DRAW_DISTANCE; x++) {
             for (let z = -DRAW_DISTANCE; z <= DRAW_DISTANCE; z++) {
-                const ncx = pcx + x, ncz = pcz + z;
-                const key = `${ncx},${ncz}`;
-                if (!this.chunks.has(key) && !this.pendingChunks.has(key)) {
-                    const dist = Math.sqrt(x*x + z*z);
-                    this.genQueue.push({ cx: ncx, cz: ncz, key, dist });
-                    this.pendingChunks.add(key);
+                const key = `${pcx + x},${pcz + z}`;
+                if (!this.chunks.has(key) && !this.chunkData.has(key)) {
+                    this.chunkData.set(key, this.generateChunkData(pcx + x, pcz + z));
+                    this.updateChunkMesh(pcx + x, pcz + z);
+                } else if (!this.chunks.has(key) && this.chunkData.has(key)) {
+                    this.updateChunkMesh(pcx + x, pcz + z);
                 }
             }
         }
-        this.genQueue.sort((a, b) => a.dist - b.dist);
-
-        // Unload far chunks
         for (const [key, grp] of this.chunks) {
             const [cx, cz] = key.split(',').map(Number);
             const dist = Math.sqrt((cx - pcx) ** 2 + (cz - pcz) ** 2);
             if (dist > DRAW_DISTANCE + 2) {
-                this.scene.remove(grp);
-                grp.children.forEach(c => c.geometry.dispose());
-                this.chunks.delete(key);
-                this.pendingChunks.delete(key);
-                if (!this.dirtyChunks.has(key)) this.chunkData.delete(key);
-            }
-        }
-    }
-
-    // Called each frame — processes a small batch from the generation queue
-    processGenQueue(maxPerFrame = 2) {
-        let processed = 0;
-        while (this.genQueue.length > 0 && processed < maxPerFrame) {
-            const { cx, cz, key } = this.genQueue.shift();
-            if (this.chunks.has(key)) { this.pendingChunks.delete(key); continue; }
-
-            if (this.chunkData.has(key)) {
-                this.updateChunkMesh(cx, cz);
-                this.pendingChunks.delete(key);
-                processed++;
-            } else {
-                // Load from DB first, fall back to procedural generation
-                SaveManager.loadChunk(key).then(saved => {
-                    if (saved) this.chunkData.set(key, saved);
-                    else this.chunkData.set(key, this.generateChunkData(cx, cz));
-                    if (!this.chunks.has(key)) this.updateChunkMesh(cx, cz);
-                    this.pendingChunks.delete(key);
-                }).catch(() => {
-                    this.chunkData.set(key, this.generateChunkData(cx, cz));
-                    if (!this.chunks.has(key)) this.updateChunkMesh(cx, cz);
-                    this.pendingChunks.delete(key);
-                });
-                processed++;
+                this.scene.remove(grp); grp.children.forEach(c => c.geometry.dispose()); this.chunks.delete(key);
             }
         }
     }
@@ -3677,12 +3607,10 @@ function animate() {
     }
 
     world.update(camera.position);
-    world.processGenQueue(2); // generate up to 2 chunks per frame
 
     // Null dimension: update its world chunks and swap into scene
     if (currentDimension === 'null' && nullWorld) {
         nullWorld.update(camera.position);
-        nullWorld.processGenQueue(2);
         // Add any new null chunks to main scene, remove old overworld ones
         nullWorld.chunks.forEach((grp, key) => {
             if (!scene.children.includes(grp)) scene.add(grp);
@@ -4127,11 +4055,9 @@ function saveGame() {
     };
     SaveManager.savePlayer(pData);
 
-    // Only save chunks that were modified (dirty) — not all loaded chunks
-    // This avoids saving huge amounts of unmodified procedural chunks every 10s
-    world.dirtyChunks.forEach(key => {
-        const data = world.chunkData.get(key);
-        if (data) SaveManager.saveChunk(key, data);
+    // Save ALL loaded chunks — not just dirty ones — so world is always fully preserved
+    world.chunkData.forEach((data, key) => {
+        SaveManager.saveChunk(key, data);
     });
     world.dirtyChunks.clear();
 
@@ -4162,7 +4088,8 @@ if (blocker) {
 
 if (typeof SaveManager !== 'undefined') {
     SaveManager.init().then(async () => {
-        // loadMetadata is now a no-op — chunks load lazily on demand
+        // Load ALL saved chunks first — restores every block the player ever placed/broke
+        if (typeof world !== 'undefined') await world.loadMetadata();
 
         const pData = await SaveManager.loadPlayer();
         if (pData) {
