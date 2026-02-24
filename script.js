@@ -629,6 +629,7 @@ function createTextureAtlas() {
       ctx.fillStyle = 'rgba(180,240,255,0.8)'; ctx.fillRect(vx+26, vy+14, 6, 20);
       ctx.strokeStyle = '#0055cc'; ctx.lineWidth = 2; ctx.stroke();
     }
+    const tex = new THREE.CanvasTexture(canvas);
     tex.magFilter = THREE.NearestFilter;
     tex.minFilter = THREE.NearestFilter;
     tex.generateMipmaps = false;
