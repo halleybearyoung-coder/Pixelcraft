@@ -3,6 +3,179 @@ import { PointerLockControls } from 'three/examples/jsm/controls/PointerLockCont
 
 const apiKey = ""; // API Key
 
+// ---- WORLD / PROFILE SELECTION ----
+const MAX_LOCAL_WORLDS = 5;
+const MAX_MP_WORLDS = 2;
+const WORLD_META_KEY = 'pixelcraft_worlds_v1';
+const USERNAME_KEY = 'pixelcraft_username_v1';
+
+let CURRENT_WORLD_SLOT = 'local-1'; // default slot id
+let CURRENT_USERNAME = localStorage.getItem(USERNAME_KEY) || '';
+
+function loadWorldMeta() {
+    try {
+        const raw = localStorage.getItem(WORLD_META_KEY);
+        if (!raw) {
+            const defaults = {
+                slots: Array.from({ length: MAX_LOCAL_WORLDS }, (_, i) => ({
+                    id: `local-${i + 1}`,
+                    name: `World ${i + 1}`,
+                    type: 'local',
+                    settings: {},
+                })),
+                mpSlots: Array.from({ length: MAX_MP_WORLDS }, (_, i) => ({
+                    id: `mp-${i + 1}`,
+                    name: `Multiplayer ${i + 1}`,
+                    type: 'mp',
+                    settings: {},
+                })),
+            };
+            localStorage.setItem(WORLD_META_KEY, JSON.stringify(defaults));
+            return defaults;
+        }
+        return JSON.parse(raw);
+    } catch {
+        return { slots: [], mpSlots: [] };
+    }
+}
+
+function saveWorldMeta(meta) {
+    localStorage.setItem(WORLD_META_KEY, JSON.stringify(meta));
+}
+
+function setCurrentWorld(slotId) {
+    CURRENT_WORLD_SLOT = slotId;
+    const meta = loadWorldMeta();
+    const allSlots = [...(meta.slots || []), ...(meta.mpSlots || [])];
+    const slot = allSlots.find(s => s.id === slotId);
+    const resumeEl = document.getElementById('resume-status');
+    if (resumeEl && slot) {
+        resumeEl.innerText = `🌍 Selected: ${slot.name} (${slot.type === 'mp' ? 'Multiplayer' : 'Singleplayer'})`;
+    }
+}
+
+function renderWorldSelection() {
+    const blocker = document.getElementById('blocker');
+    if (!blocker) return;
+    const meta = loadWorldMeta();
+
+    const existingWorldPanel = document.getElementById('worlds-panel');
+    if (existingWorldPanel) existingWorldPanel.remove();
+
+    const panel = document.createElement('div');
+    panel.id = 'worlds-panel';
+    panel.style.marginTop = '12px';
+    panel.style.pointerEvents = 'auto';
+    panel.style.padding = '12px 16px';
+    panel.style.background = 'rgba(0,0,0,0.55)';
+    panel.style.borderRadius = '8px';
+    panel.style.border = '1px solid rgba(255,255,255,0.12)';
+    panel.style.maxWidth = '520px';
+
+    const title = document.createElement('div');
+    title.textContent = 'Worlds';
+    title.style.fontWeight = 'bold';
+    title.style.marginBottom = '6px';
+    panel.appendChild(title);
+
+    const usernameRow = document.createElement('div');
+    usernameRow.style.display = 'flex';
+    usernameRow.style.gap = '6px';
+    usernameRow.style.alignItems = 'center';
+    usernameRow.style.marginBottom = '8px';
+    const userLabel = document.createElement('span');
+    userLabel.textContent = 'Username:';
+    const userInput = document.createElement('input');
+    userInput.type = 'text';
+    userInput.value = CURRENT_USERNAME;
+    userInput.placeholder = 'Player';
+    userInput.style.flex = '1';
+    userInput.style.padding = '4px 6px';
+    userInput.style.borderRadius = '4px';
+    userInput.style.border = '1px solid #555';
+    userInput.style.background = '#111';
+    userInput.style.color = '#fff';
+    userInput.onchange = () => {
+        CURRENT_USERNAME = userInput.value.trim() || 'Player';
+        localStorage.setItem(USERNAME_KEY, CURRENT_USERNAME);
+    };
+    usernameRow.appendChild(userLabel);
+    usernameRow.appendChild(userInput);
+    panel.appendChild(usernameRow);
+
+    const list = document.createElement('div');
+    list.style.display = 'grid';
+    list.style.gridTemplateColumns = 'repeat(1, minmax(0, 1fr))';
+    list.style.gap = '6px';
+
+    const makeSlotRow = (slot, isMp) => {
+        const row = document.createElement('div');
+        row.style.display = 'flex';
+        row.style.alignItems = 'center';
+        row.style.gap = '6px';
+        row.style.fontSize = '13px';
+
+        const nameInput = document.createElement('input');
+        nameInput.type = 'text';
+        nameInput.value = slot.name;
+        nameInput.style.flex = '1';
+        nameInput.style.padding = '4px 6px';
+        nameInput.style.borderRadius = '4px';
+        nameInput.style.border = '1px solid #444';
+        nameInput.style.background = '#111';
+        nameInput.style.color = '#fff';
+        nameInput.onchange = () => {
+            slot.name = nameInput.value || slot.name;
+            saveWorldMeta(meta);
+        };
+
+        const typeBadge = document.createElement('span');
+        typeBadge.textContent = isMp ? 'MP' : 'SP';
+        typeBadge.style.fontSize = '11px';
+        typeBadge.style.padding = '2px 6px';
+        typeBadge.style.borderRadius = '4px';
+        typeBadge.style.border = '1px solid #555';
+        typeBadge.style.background = 'rgba(255,255,255,0.05)';
+
+        const selectBtn = document.createElement('button');
+        selectBtn.textContent = 'Select';
+        selectBtn.style.padding = '4px 8px';
+        selectBtn.style.borderRadius = '4px';
+        selectBtn.style.border = '1px solid #4CAF50';
+        selectBtn.style.background = '#2e7d32';
+        selectBtn.style.color = '#fff';
+        selectBtn.style.cursor = 'pointer';
+        selectBtn.onclick = (e) => {
+            e.stopPropagation();
+            setCurrentWorld(slot.id);
+        };
+
+        row.appendChild(nameInput);
+        row.appendChild(typeBadge);
+        row.appendChild(selectBtn);
+        return row;
+    };
+
+    (meta.slots || []).forEach(s => {
+        list.appendChild(makeSlotRow(s, false));
+    });
+
+    const mpHeader = document.createElement('div');
+    mpHeader.textContent = 'Multiplayer Worlds (invite only)';
+    mpHeader.style.marginTop = '8px';
+    mpHeader.style.fontSize = '12px';
+    mpHeader.style.color = '#bbb';
+    list.appendChild(mpHeader);
+
+    (meta.mpSlots || []).forEach(s => {
+        list.appendChild(makeSlotRow(s, true));
+    });
+
+    panel.appendChild(list);
+    blocker.appendChild(panel);
+}
+
+// ---- SAVE MANAGER (per-world using CURRENT_WORLD_SLOT prefix) ----
 class SaveManager {
     static dbName = 'PixelcraftDB';
     static version = 1;
@@ -27,14 +200,16 @@ class SaveManager {
     static async savePlayer(data) {
         if (!this.db) return;
         const tx = this.db.transaction(['player'], 'readwrite');
-        tx.objectStore('player').put(data, 'main');
+        const key = `player:${CURRENT_WORLD_SLOT}`;
+        tx.objectStore('player').put(data, key);
     }
 
     static async loadPlayer() {
         if (!this.db) return null;
         return new Promise(resolve => {
             const tx = this.db.transaction(['player'], 'readonly');
-            const req = tx.objectStore('player').get('main');
+            const key = `player:${CURRENT_WORLD_SLOT}`;
+            const req = tx.objectStore('player').get(key);
             req.onsuccess = () => resolve(req.result);
             req.onerror = () => resolve(null);
         });
@@ -43,14 +218,16 @@ class SaveManager {
     static async saveChunk(key, data) {
         if (!this.db) return;
         const tx = this.db.transaction(['chunks'], 'readwrite');
-        tx.objectStore('chunks').put(data, key);
+        const worldKey = `${CURRENT_WORLD_SLOT}:${key}`;
+        tx.objectStore('chunks').put(data, worldKey);
     }
 
     static async loadChunk(key) {
         if (!this.db) return null;
         return new Promise(resolve => {
             const tx = this.db.transaction(['chunks'], 'readonly');
-            const req = tx.objectStore('chunks').get(key);
+            const worldKey = `${CURRENT_WORLD_SLOT}:${key}`;
+            const req = tx.objectStore('chunks').get(worldKey);
             req.onsuccess = () => resolve(req.result);
             req.onerror = () => resolve(null);
         });
@@ -66,7 +243,12 @@ class SaveManager {
             req.onsuccess = (e) => {
                 const cursor = e.target.result;
                 if (cursor) {
-                    chunkMap.set(cursor.key, cursor.value);
+                    const key = cursor.key;
+                    const prefix = `${CURRENT_WORLD_SLOT}:`;
+                    if (typeof key === 'string' && key.startsWith(prefix)) {
+                        const rawKey = key.slice(prefix.length);
+                        chunkMap.set(rawKey, cursor.value);
+                    }
                     cursor.continue();
                 } else {
                     resolve(chunkMap);
@@ -3217,7 +3399,13 @@ let targetBlock = null;
 
 const blocker = document.getElementById('blocker');
 
-blocker.addEventListener('click', () => { controls.lock(); });
+if (blocker) {
+    // Show world selection + username controls on the home/pause screen
+    renderWorldSelection();
+    if (!CURRENT_WORLD_SLOT) CURRENT_WORLD_SLOT = 'local-1';
+    setCurrentWorld(CURRENT_WORLD_SLOT);
+    blocker.addEventListener('click', () => { controls.lock(); });
+}
 
 controls.addEventListener('lock', () => {
     prevTime = performance.now();
