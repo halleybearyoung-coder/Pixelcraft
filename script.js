@@ -72,6 +72,8 @@ class SaveManager {
                     resolve(chunkMap);
                 }
             };
+            req.onerror = () => resolve(chunkMap);
+            tx.onerror = () => resolve(chunkMap);
         });
     }
 
@@ -4086,50 +4088,68 @@ if (blocker) {
     blocker.onclick = (e) => { if (e.target === blocker && typeof controls !== 'undefined') controls.lock(); };
 }
 
+function hideLoadingAndStart() {
+    const loadEl = document.getElementById('loading');
+    if (loadEl) loadEl.style.display = 'none';
+    animate();
+}
+
 if (typeof SaveManager !== 'undefined') {
-    SaveManager.init().then(async () => {
-        // Load ALL saved chunks first — restores every block the player ever placed/broke
-        if (typeof world !== 'undefined') await world.loadMetadata();
+    const loadTimeout = setTimeout(hideLoadingAndStart, 8000);
+    SaveManager.init()
+        .then(async () => {
+            try {
+                // Load ALL saved chunks first — restores every block the player ever placed/broke
+                if (typeof world !== 'undefined') await world.loadMetadata();
 
-        const pData = await SaveManager.loadPlayer();
-        if (pData) {
-            // Exact X and Z, always Y=100 so player never spawns inside terrain
-            const spawnX = typeof pData.x === 'number' ? pData.x : 0;
-            const spawnZ = typeof pData.z === 'number' ? pData.z : 0;
-            const spawnY = 100;
+                const pData = await SaveManager.loadPlayer();
+                if (pData) {
+                    // Exact X and Z, always Y=100 so player never spawns inside terrain
+                    const spawnX = typeof pData.x === 'number' ? pData.x : 0;
+                    const spawnZ = typeof pData.z === 'number' ? pData.z : 0;
+                    const spawnY = 100;
 
-            camera.position.set(spawnX, spawnY, spawnZ);
-            camera.rotation.set(pData.rx || 0, pData.ry || 0, 0);
+                    camera.position.set(spawnX, spawnY, spawnZ);
+                    camera.rotation.set(pData.rx || 0, pData.ry || 0, 0);
 
-            if (typeof playerHealth !== 'undefined') playerHealth = Math.max(1, pData.health || 10);
-            if (typeof updateHealthUI === 'function') updateHealthUI();
+                    if (typeof playerHealth !== 'undefined') playerHealth = Math.max(1, pData.health || 10);
+                    if (typeof updateHealthUI === 'function') updateHealthUI();
 
-            if (pData.inventory && typeof inventory !== 'undefined') {
-                for (let i = 0; i < INVENTORY_SIZE; i++) {
-                    if (pData.inventory[i]) inventory[i] = pData.inventory[i];
+                    if (pData.inventory && typeof inventory !== 'undefined') {
+                        for (let i = 0; i < INVENTORY_SIZE; i++) {
+                            if (pData.inventory[i]) inventory[i] = pData.inventory[i];
+                        }
+                    }
+                    if (typeof updateUI === 'function') updateUI();
+
+                    if (pData.chests && typeof world !== 'undefined') {
+                        pData.chests.forEach(([k, v]) => world.chestData.set(k, v));
+                    }
+
+                    const resumeEl = document.getElementById('resume-status');
+                    if (resumeEl) {
+                        resumeEl.innerText = `✅ World restored — X:${spawnX.toFixed(0)} Z:${spawnZ.toFixed(0)} | Click to Play`;
+                    }
+                } else {
+                    // Fresh new game
+                    camera.position.set(0, 100, 0);
+                    const resumeEl = document.getElementById('resume-status');
+                    if (resumeEl) resumeEl.innerText = '🌍 New world — Click to Play';
                 }
+            } catch (e) {
+                console.warn('Load/save init error, starting fresh:', e);
+                if (typeof camera !== 'undefined') camera.position.set(0, 100, 0);
+                const resumeEl = document.getElementById('resume-status');
+                if (resumeEl) resumeEl.innerText = '🌍 New world — Click to Play';
             }
-            if (typeof updateUI === 'function') updateUI();
-
-            if (pData.chests && typeof world !== 'undefined') {
-                pData.chests.forEach(([k, v]) => world.chestData.set(k, v));
-            }
-
-            const resumeEl = document.getElementById('resume-status');
-            if (resumeEl) {
-                resumeEl.innerText = `✅ World restored — X:${spawnX.toFixed(0)} Z:${spawnZ.toFixed(0)} | Click to Play`;
-            }
-        } else {
-            // Fresh new game
-            camera.position.set(0, 100, 0);
-            const resumeEl = document.getElementById('resume-status');
-            if (resumeEl) resumeEl.innerText = '🌍 New world — Click to Play';
-        }
-
-        const loadEl = document.getElementById('loading');
-        if (loadEl) loadEl.style.display = 'none';
-        animate();
-    });
+            clearTimeout(loadTimeout);
+            hideLoadingAndStart();
+        })
+        .catch((e) => {
+            console.warn('SaveManager.init failed, starting anyway:', e);
+            clearTimeout(loadTimeout);
+            hideLoadingAndStart();
+        });
 } else {
     animate();
 }
