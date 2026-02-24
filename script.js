@@ -17,11 +17,7 @@ const IS_GUEST       = _urlParams.get('isGuest') === '1';
 // Draw distance from world settings (default 4 — not 5 to avoid lag)
 const DRAW_DISTANCE  = Math.min(7, Math.max(2, parseInt(_urlParams.get('renderDist') || '4')));
 
-// Redirect to worlds if no world selected
-if (!_urlParams.get('world')) {
-  // Only redirect on a real browser (not dev tools)
-  if (typeof window !== 'undefined') window.location.replace('worlds.html');
-}
+
 
 // Set world info in pause menu once DOM is ready (may already be ready by now)
 function applyWorldParams() {
