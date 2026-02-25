@@ -697,104 +697,112 @@ function createTextureAtlas() {
     };
     drawIngot(1, 12, '#ccc'); drawIngot(2, 12, '#fce14b'); drawIngot(3, 12, '#5decf5');
 
-    // ═══ NULL DIMENSION TEXTURES ═══
-    // (0,13) NULL_STONE — jet black with electric blue micro-cracks
-    fill(0, 13, '#080810');
+    // ═══ NULL DIMENSION TEXTURES (enhanced aesthetics) ═══
+    // (0,13) NULL_STONE — deep void with electric blue crack network
+    fill(0, 13, '#050508');
     { const nx = 0*B, ny = 13*B;
-      ctx.strokeStyle = '#1a4aff'; ctx.lineWidth = 1;
-      for (let i = 0; i < 8; i++) {
-        ctx.beginPath(); ctx.moveTo(nx + Math.random()*B, ny + Math.random()*B);
-        ctx.lineTo(nx + Math.random()*B, ny + Math.random()*B); ctx.stroke();
+      const grad = ctx.createRadialGradient(nx+16, ny+16, 0, nx+32, ny+32, 50);
+      grad.addColorStop(0, '#0a0a18'); grad.addColorStop(1, '#020204');
+      ctx.fillStyle = grad; ctx.fillRect(nx, ny, B, B);
+      ctx.strokeStyle = '#2a5aff'; ctx.lineWidth = 1.5;
+      for (let i = 0; i < 12; i++) {
+        ctx.beginPath(); ctx.moveTo(nx + 4 + Math.random()*(B-8), ny + 4 + Math.random()*(B-8));
+        ctx.lineTo(nx + 4 + Math.random()*(B-8), ny + 4 + Math.random()*(B-8)); ctx.stroke();
       }
-      ctx.strokeStyle = '#0a1a66'; ctx.lineWidth = 2;
-      for (let i = 0; i < 5; i++) {
+      ctx.strokeStyle = 'rgba(80, 140, 255, 0.6)'; ctx.lineWidth = 1;
+      for (let i = 0; i < 6; i++) {
         ctx.beginPath(); ctx.moveTo(nx + Math.random()*B, ny + Math.random()*B);
         ctx.lineTo(nx + Math.random()*B, ny + Math.random()*B); ctx.stroke();
       }
     }
 
-    // (1,13) NULL_SOIL — deep void earth, dark purple-black
-    fill(1, 13, '#0d0818');
+    // (1,13) NULL_SOIL — rich void earth with purple-blue speckles
+    fill(1, 13, '#080510');
     { const nx = 1*B, ny = 13*B;
-      for (let i = 0; i < 30; i++) drawBlob(nx + Math.random()*B, ny + Math.random()*B, 3 + Math.random()*3, '#1a0d2e');
-      for (let i = 0; i < 10; i++) drawBlob(nx + Math.random()*B, ny + Math.random()*B, 2, '#2a0a4a');
+      ctx.fillStyle = '#120818';
+      for (let i = 0; i < 40; i++) drawBlob(nx + Math.random()*B, ny + Math.random()*B, 2.5 + Math.random()*3, '#1e0a2a');
+      ctx.fillStyle = 'rgba(60, 20, 100, 0.7)';
+      for (let i = 0; i < 15; i++) drawBlob(nx + Math.random()*B, ny + Math.random()*B, 1.5, '#2a1548');
+      ctx.fillStyle = 'rgba(100, 80, 200, 0.4)';
+      for (let i = 0; i < 8; i++) drawBlob(nx + Math.random()*B, ny + Math.random()*B, 1, '#4040c0');
     }
 
-    // (2,13) NULL_WATER — glowing electric blue
-    fill(2, 13, 'rgba(0, 60, 255, 0.75)');
+    // (2,13) NULL_WATER — luminous electric blue with waves and glow
+    fill(2, 13, 'rgba(0, 40, 180, 0.85)');
     { const wx = 2*B, wy = 13*B;
-      ctx.fillStyle = 'rgba(80, 160, 255, 0.5)';
-      for (let y = 4; y < B; y += 6) {
+      const waterGrad = ctx.createLinearGradient(wx, wy, wx + B, wy + B);
+      waterGrad.addColorStop(0, 'rgba(30, 100, 255, 0.6)'); waterGrad.addColorStop(1, 'rgba(0, 50, 200, 0.5)');
+      ctx.fillStyle = waterGrad; ctx.fillRect(wx, wy, B, B);
+      ctx.strokeStyle = 'rgba(120, 200, 255, 0.6)'; ctx.lineWidth = 1.5;
+      for (let y = 2; y < B; y += 5) {
         ctx.beginPath(); ctx.moveTo(wx, wy + y);
-        for (let x = 0; x <= B; x += 4) ctx.lineTo(wx + x, wy + y + Math.sin(x/4 + y)*2.5);
+        for (let x = 0; x <= B; x += 3) ctx.lineTo(wx + x, wy + y + Math.sin(x/3 + y/2) * 3);
         ctx.stroke();
       }
-      // glow dots
-      ctx.fillStyle = 'rgba(180, 220, 255, 0.6)';
-      for (let i = 0; i < 8; i++) drawBlob(wx + Math.random()*B, wy + Math.random()*B, 2, 'rgba(180,220,255,0.7)');
+      ctx.fillStyle = 'rgba(200, 230, 255, 0.8)';
+      for (let i = 0; i < 12; i++) drawBlob(wx + Math.random()*B, wy + Math.random()*B, 2 + Math.random()*2, 'rgba(200,230,255,0.9)');
     }
 
-    // (3,13) NULL_ORE — black stone with void crystal veins
-    fill(3, 13, '#090912');
+    // (3,13) NULL_ORE — obsidian-like with sharp cyan crystal veins
+    fill(3, 13, '#040408');
     { const ox = 3*B, oy = 13*B;
-      ctx.fillStyle = '#0d0d1a';
-      for (let i = 0; i < 8; i++) drawBlob(ox + Math.random()*B, oy + Math.random()*B, 5, '#111122');
-      // bright cyan-white crystal shards
-      ctx.fillStyle = '#aaeeff';
-      for (let i = 0; i < 6; i++) {
-        const sx = ox + 8 + Math.random()*(B-16), sy = oy + 8 + Math.random()*(B-16);
-        ctx.beginPath(); ctx.moveTo(sx, sy-6); ctx.lineTo(sx+4, sy); ctx.lineTo(sx, sy+6); ctx.lineTo(sx-4, sy); ctx.fill();
+      ctx.fillStyle = '#0a0a14';
+      for (let i = 0; i < 10; i++) drawBlob(ox + Math.random()*B, oy + Math.random()*B, 4 + Math.random()*4, '#0c0c1a');
+      ctx.fillStyle = '#c8f0ff';
+      for (let i = 0; i < 8; i++) {
+        const sx = ox + 6 + Math.random()*(B-12), sy = oy + 6 + Math.random()*(B-12);
+        ctx.beginPath(); ctx.moveTo(sx, sy-5); ctx.lineTo(sx+3, sy); ctx.lineTo(sx, sy+5); ctx.lineTo(sx-3, sy); ctx.fill();
       }
-      ctx.fillStyle = '#55ddff';
-      for (let i = 0; i < 4; i++) drawBlob(ox + 8 + Math.random()*(B-16), oy + 8 + Math.random()*(B-16), 3, '#55ddff');
+      ctx.fillStyle = 'rgba(100, 220, 255, 0.9)';
+      for (let i = 0; i < 6; i++) drawBlob(ox + 8 + Math.random()*(B-16), oy + 8 + Math.random()*(B-16), 2.5, '#88ddff');
     }
 
-    // (0,14) NULL_CRYSTAL — tall translucent deep-blue spire
-    fill(0, 14, 'rgba(10,10,40,0.9)');
+    // (0,14) NULL_CRYSTAL — faceted deep-blue crystal with bright highlights
+    fill(0, 14, 'rgba(8, 8, 35, 0.95)');
     { const cx2 = 0*B, cy2 = 14*B;
-      ctx.fillStyle = 'rgba(20, 60, 200, 0.8)';
-      // 3 crystal pillars
+      ctx.fillStyle = 'rgba(30, 80, 220, 0.85)';
       const drawCrystal = (x, y, w, h) => {
         ctx.beginPath(); ctx.moveTo(x + w/2, y); ctx.lineTo(x + w, y + h); ctx.lineTo(x, y + h); ctx.fill();
-        ctx.fillStyle = 'rgba(100,180,255,0.5)'; ctx.fillRect(x + w/4, y + h*0.3, w/2, 4); ctx.fillStyle = 'rgba(20,60,200,0.8)';
+        ctx.fillStyle = 'rgba(140, 200, 255, 0.7)'; ctx.fillRect(x + w/4, y + h*0.25, w/2, 3); ctx.fillStyle = 'rgba(30, 80, 220, 0.85)';
       };
-      drawCrystal(cx2 + 8, cy2 + 4, 16, 50); drawCrystal(cx2 + 30, cy2 + 16, 12, 40); drawCrystal(cx2 + 48, cy2 + 8, 14, 46);
+      drawCrystal(cx2 + 6, cy2 + 2, 18, 56); drawCrystal(cx2 + 28, cy2 + 12, 14, 44); drawCrystal(cx2 + 46, cy2 + 6, 16, 50);
+      ctx.fillStyle = 'rgba(180, 220, 255, 0.5)';
+      drawBlob(cx2 + 15, cy2 + 20, 3, 'rgba(180,220,255,0.6)'); drawBlob(cx2 + 38, cy2 + 30, 2, 'rgba(180,220,255,0.5)');
     }
 
-    // (1,14) NULL_BRICK — dark void bricks with blue mortar lines
-    fill(1, 14, '#111120');
+    // (1,14) NULL_BRICK — void bricks with bright blue mortar and subtle sheen
+    fill(1, 14, '#0c0c18');
     { const bkx = 1*B, bky = 14*B;
-      ctx.fillStyle = '#0a0a18';
+      ctx.fillStyle = '#080810';
       for (let y = 0; y < B; y += 16) {
         const offset = (Math.floor(y/16) % 2) * 16;
         for (let x = 0; x < B; x += 32) {
           ctx.fillRect(bkx + x + offset + 2, bky + y + 2, 28, 12);
         }
       }
-      ctx.strokeStyle = '#1a1aff'; ctx.lineWidth = 1;
+      ctx.strokeStyle = '#2a3aff'; ctx.lineWidth = 1.5;
       for (let y = 0; y < B; y += 16) { ctx.beginPath(); ctx.moveTo(bkx, bky+y); ctx.lineTo(bkx+B, bky+y); ctx.stroke(); }
       for (let x = 0; x < B; x += 32) { ctx.beginPath(); ctx.moveTo(bkx+x, bky); ctx.lineTo(bkx+x, bky+B); ctx.stroke(); }
+      ctx.strokeStyle = 'rgba(80, 120, 255, 0.4)'; ctx.lineWidth = 1;
+      for (let y = 8; y < B; y += 16) { ctx.beginPath(); ctx.moveTo(bkx, bky+y); ctx.lineTo(bkx+B, bky+y); ctx.stroke(); }
     }
 
-    // (2,14) NULL_PORTAL — swirling void (animated appearance)
-    fill(2, 14, '#000008');
+    // (2,14) NULL_PORTAL — vivid swirling void with strong glow
+    fill(2, 14, '#000004');
     { const px2 = 2*B, py2 = 14*B;
-      // concentric void rings with blue glow
-      for (let r = 28; r > 4; r -= 5) {
-        const alpha = (28 - r) / 28;
-        ctx.strokeStyle = `rgba(${Math.floor(20 + alpha*100)}, ${Math.floor(alpha*80)}, 255, ${0.3 + alpha * 0.7})`;
-        ctx.lineWidth = 3;
+      for (let r = 30; r > 2; r -= 4) {
+        const alpha = (30 - r) / 30;
+        ctx.strokeStyle = `rgba(${Math.floor(40 + alpha*120)}, ${Math.floor(80 + alpha*120)}, 255, ${0.4 + alpha * 0.6})`;
+        ctx.lineWidth = 2.5;
         ctx.beginPath(); ctx.arc(px2 + 32, py2 + 32, r, 0, Math.PI * 2); ctx.stroke();
       }
-      // spiral arms
-      ctx.strokeStyle = 'rgba(80, 160, 255, 0.8)'; ctx.lineWidth = 2;
-      for (let a = 0; a < Math.PI * 4; a += 0.15) {
-        const r = a * 4; const x = px2 + 32 + Math.cos(a) * r; const y = py2 + 32 + Math.sin(a) * r;
-        ctx.beginPath(); ctx.arc(x, y, 1, 0, Math.PI*2); ctx.fillStyle = 'rgba(120,200,255,0.9)'; ctx.fill();
+      ctx.fillStyle = 'rgba(120, 200, 255, 0.9)';
+      for (let a = 0; a < Math.PI * 5; a += 0.12) {
+        const r = a * 3.5; const x = px2 + 32 + Math.cos(a) * r; const y = py2 + 32 + Math.sin(a) * r;
+        ctx.beginPath(); ctx.arc(x, y, 1.5, 0, Math.PI*2); ctx.fill();
       }
-      // bright core
-      ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(px2+32, py2+32, 5, 0, Math.PI*2); ctx.fill();
-      ctx.fillStyle = 'rgba(100,180,255,0.9)'; ctx.beginPath(); ctx.arc(px2+32, py2+32, 10, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(px2+32, py2+32, 6, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = 'rgba(150, 200, 255, 0.95)'; ctx.beginPath(); ctx.arc(px2+32, py2+32, 12, 0, Math.PI*2); ctx.fill();
     }
 
     // (3,14) NULL_INGOT — dark metal with blue sheen
@@ -2339,8 +2347,18 @@ class VoxelWorld {
 
     async loadMetadata() {
         const savedChunks = await SaveManager.loadAllChunks();
-        savedChunks.forEach((v, k) => { if (v) this.chunkData.set(k, v); });
-        console.log(`Loaded ${savedChunks.size} chunks from save.`);
+        let overworldCount = 0, nullCount = 0;
+        const nw = (typeof getNullWorld !== 'undefined') ? getNullWorld() : null;
+        savedChunks.forEach((v, k) => {
+            if (!v) return;
+            if (k.startsWith('null:')) {
+                if (nw) { nw.chunkData.set(k.slice(5), v); nullCount++; }
+            } else {
+                this.chunkData.set(k, v);
+                overworldCount++;
+            }
+        });
+        console.log(`Loaded ${overworldCount} overworld + ${nullCount} null dimension chunks from save.`);
     }
 
     getBlock(x, y, z) {
@@ -2861,12 +2879,14 @@ class VoxelWorld {
                     let r = 1, g = 1, b = 1;
                     const isFoliage = (type === 1 || type === 5 || type === 16);
                     if (isFoliage) { r = 0.5; g = 0.8; b = 0.4; }
-                    // Null water: deep blue tint
-                    if (type === BLOCKS.NULL_WATER.id) { r = 0.1; g = 0.3; b = 1.0; }
-                    // Null crystal: emissive cyan tint
-                    if (type === BLOCKS.NULL_CRYSTAL.id) { r = 0.3; g = 0.7; b = 1.0; }
-                    // Null portal: bright blue-white glow
-                    if (type === BLOCKS.NULL_PORTAL.id) { r = 0.6; g = 0.8; b = 1.0; }
+                    // Null dimension block aesthetics (richer tints)
+                    if (type === BLOCKS.NULL_STONE.id) { r = 0.35; g = 0.4; b = 0.7; }
+                    if (type === BLOCKS.NULL_SOIL.id) { r = 0.4; g = 0.25; b = 0.55; }
+                    if (type === BLOCKS.NULL_WATER.id) { r = 0.15; g = 0.35; b = 1.0; }
+                    if (type === BLOCKS.NULL_ORE.id) { r = 0.25; g = 0.6; b = 0.95; }
+                    if (type === BLOCKS.NULL_CRYSTAL.id) { r = 0.35; g = 0.65; b = 1.0; }
+                    if (type === BLOCKS.NULL_BRICK.id) { r = 0.3; g = 0.35; b = 0.75; }
+                    if (type === BLOCKS.NULL_PORTAL.id) { r = 0.7; g = 0.85; b = 1.0; }
 
                     if (check(1,0,0)) {
                         const ndx = positions.length/3;
@@ -3108,6 +3128,7 @@ const mobManager = new MobManager(scene, world);
 // ═══════════════════════════════════════════════════════════════════
 let currentDimension = 'overworld'; // 'overworld' | 'null'
 let returnPos = null; // where player was when they entered null dimension
+let nullPortalCooldown = 0; // seconds before portal can trigger again (walk-into detection)
 let nullWorld = null; // VoxelWorld instance for null dim (lazy created)
 let nullScene = null;
 
@@ -3369,6 +3390,7 @@ function tryActivatePortal(bx, by, bz) {
         } else {
             exitNullDimension();
         }
+        if (typeof nullPortalCooldown !== 'undefined') nullPortalCooldown = 1.5;
         return true;
     }
     return false;
@@ -3791,6 +3813,26 @@ function animate() {
             }
 
             if (camera.position.y < -30) { playerHealth = 0; updateHealthUI(); }
+        }
+
+        // Walk-into Null Portal: if player is inside a NULL_PORTAL block, trigger dimension switch
+        nullPortalCooldown -= delta;
+        if (nullPortalCooldown <= 0) {
+            const px = Math.floor(camera.position.x), py = Math.floor(camera.position.y), pz = Math.floor(camera.position.z);
+            const aw = activeWorld();
+            const atFeet = aw.getBlock(px, py, pz);
+            const atHead = aw.getBlock(px, py + 1, pz);
+            if (atFeet === BLOCKS.NULL_PORTAL.id || atHead === BLOCKS.NULL_PORTAL.id) {
+                const bx = atFeet === BLOCKS.NULL_PORTAL.id ? px : px;
+                const by = atFeet === BLOCKS.NULL_PORTAL.id ? py : py + 1;
+                const bz = atFeet === BLOCKS.NULL_PORTAL.id ? pz : pz;
+                if (currentDimension === 'overworld') {
+                    enterNullDimension(bx, by, bz);
+                } else {
+                    exitNullDimension();
+                }
+                nullPortalCooldown = 1.5;
+            }
         }
 
         mobManager.update(delta, camera.position);
@@ -4233,24 +4275,34 @@ function saveGame() {
     if (typeof SaveManager === 'undefined' || typeof world === 'undefined') return;
     if (!SaveManager.db) return; // DB not ready yet
 
-    // Save player state
+    // Save player state (always store Y=100 for safe spawn when loading "as if offline")
     const pData = {
         x: camera.position.x,
-        y: camera.position.y,
+        y: 100,
         z: camera.position.z,
         rx: camera.rotation.x,
         ry: camera.rotation.y,
         health: typeof playerHealth !== 'undefined' ? playerHealth : 10,
         inventory: typeof inventory !== 'undefined' ? JSON.parse(JSON.stringify(inventory)) : [],
-        chests: Array.from(world.chestData.entries())
+        chests: Array.from(world.chestData.entries()),
+        currentDimension: typeof currentDimension !== 'undefined' ? currentDimension : 'overworld',
+        returnPos: typeof returnPos !== 'undefined' ? returnPos : null
     };
     SaveManager.savePlayer(pData);
 
-    // Save ALL loaded chunks — not just dirty ones — so world is always fully preserved
+    // Save overworld chunks
     world.chunkData.forEach((data, key) => {
         SaveManager.saveChunk(key, data);
     });
     world.dirtyChunks.clear();
+
+    // Save null dimension chunks so the world persists when "offline"
+    if (typeof nullWorld !== 'undefined' && nullWorld && nullWorld.chunkData) {
+        nullWorld.chunkData.forEach((data, key) => {
+            SaveManager.saveChunk('null:' + key, data);
+        });
+        nullWorld.dirtyChunks.clear();
+    }
 
     // Update save status
     const ss = document.getElementById('save-status');
@@ -4293,13 +4345,16 @@ if (typeof SaveManager !== 'undefined') {
 
                 const pData = await SaveManager.loadPlayer();
                 if (pData) {
-                    // Exact X and Z, always Y=100 so player never spawns inside terrain
+                    // Always spawn at Y=100 (world runs "as if offline" — safe height every time)
                     const spawnX = typeof pData.x === 'number' ? pData.x : 0;
                     const spawnZ = typeof pData.z === 'number' ? pData.z : 0;
                     const spawnY = 100;
 
                     camera.position.set(spawnX, spawnY, spawnZ);
                     camera.rotation.set(pData.rx || 0, pData.ry || 0, 0);
+
+                    if (typeof currentDimension !== 'undefined') currentDimension = pData.currentDimension || 'overworld';
+                    if (typeof returnPos !== 'undefined') returnPos = pData.returnPos || null;
 
                     if (typeof playerHealth !== 'undefined') playerHealth = Math.max(1, pData.health || 10);
                     if (typeof updateHealthUI === 'function') updateHealthUI();
